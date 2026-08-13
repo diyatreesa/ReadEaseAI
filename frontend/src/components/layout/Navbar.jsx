@@ -4,7 +4,7 @@ function Navbar() {
   return (
     <nav className="fixed top-0 left-0 w-full bg-slate-950/85 backdrop-blur-md z-50 border-b border-slate-800">
 
-      <div className="w-full px-10 lg:px-16 xl:px-20 py-4 flex items-center justify-between">
+      <div className="w-full px-8 lg:px-12 xl:px-16 py-2.5 flex items-center justify-between">
 
         {/* Logo */}
         <Link
@@ -14,14 +14,15 @@ function Navbar() {
           <img
             src="/logo.png"
             alt="ReadEase AI Logo"
-            className="w-14 h-14 object-contain"
+            className="w-12 h-12 object-contain"
           />
 
           <span>ReadEase AI</span>
         </Link>
 
+
         {/* Navigation Links */}
-        <div className="flex items-center gap-10">
+        <div className="flex items-center gap-9">
 
           <Link
             to="/"
@@ -46,7 +47,7 @@ function Navbar() {
 
           <Link
             to="/register"
-            className="bg-cyan-400 text-black px-6 py-3 rounded-xl font-semibold hover:bg-cyan-300 transition"
+            className="bg-cyan-400 text-black px-6 py-2.5 rounded-xl font-semibold hover:bg-cyan-300 transition"
           >
             Get Started
           </Link>

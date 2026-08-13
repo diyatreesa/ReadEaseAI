@@ -6,7 +6,9 @@ import {
   collection,
   query,
   where,
-  getDocs
+  getDocs,
+  doc,
+  getDoc
 } from "firebase/firestore";
 
 import { auth, db } from "../services/firebase";
@@ -18,7 +20,7 @@ function Dashboard() {
 
   const user = auth.currentUser;
 
-
+  const [userName, setUserName] = useState("User");
   // =====================================================
   // DASHBOARD DATA
   // =====================================================
@@ -51,6 +53,40 @@ function Dashboard() {
 
           return;
         }
+
+        // =====================================================
+// LOAD USER NAME
+// =====================================================
+
+try {
+  const userDocRef = doc(db, "users", currentUser.uid);
+  const userDocSnap = await getDoc(userDocRef);
+
+  if (userDocSnap.exists()) {
+    const userData = userDocSnap.data();
+
+    setUserName(
+      userData.name ||
+      currentUser.displayName ||
+      currentUser.email?.split("@")[0] ||
+      "User"
+    );
+  } else {
+    setUserName(
+      currentUser.displayName ||
+      currentUser.email?.split("@")[0] ||
+      "User"
+    );
+  }
+} catch (nameError) {
+  console.error("Unable to load user name:", nameError);
+
+  setUserName(
+    currentUser.displayName ||
+    currentUser.email?.split("@")[0] ||
+    "User"
+  );
+}
 
 
         const historyRef =
@@ -201,11 +237,6 @@ function Dashboard() {
   // USER NAME
   // =====================================================
 
-  const userName =
-    user?.displayName ||
-    user?.email?.split("@")[0] ||
-    "User";
-
 
   // =====================================================
   // DASHBOARD
@@ -294,35 +325,33 @@ function Dashboard() {
 
 
         {/* =================================================
-            WELCOME SECTION
-        ================================================= */}
+    WELCOME SECTION
+================================================= */}
 
-        <div className="mt-14">
+<div className="mt-14">
 
-          <p className="text-cyan-400 font-semibold text-sm uppercase tracking-wider">
-            Your Workspace
-          </p>
+  <p className="text-cyan-400 font-semibold text-sm uppercase tracking-wider">
+    Your Workspace
+  </p>
 
+  <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold mt-3 leading-tight">
 
-          <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold mt-3 leading-tight">
+    Welcome,{" "}
 
-            Welcome,{" "}
+    <span className="text-cyan-400">
+      {userName}
+    </span>{" "}
 
-            <span className="text-cyan-400">
-              {userName}
-            </span>{" "}
+    
 
-            👋
+  </h1>
 
-          </h1>
+  <p className="text-slate-400 text-lg mt-4 max-w-2xl">
+    Simplify complex English, improve readability,
+    and make information easier to understand.
+  </p>
 
-
-          <p className="text-slate-400 text-lg mt-4 max-w-2xl">
-            Simplify complex English, improve readability,
-            and make information easier to understand.
-          </p>
-
-        </div>
+</div>
 
 
         {/* =================================================

@@ -3,7 +3,10 @@ import { Link, useNavigate } from "react-router-dom";
 
 import {
   createUserWithEmailAndPassword,
-  updateProfile
+  updateProfile,
+  sendEmailVerification,
+  GoogleAuthProvider,
+  signInWithPopup
 } from "firebase/auth";
 
 import { auth, db } from "../services/firebase";
@@ -25,11 +28,27 @@ function Register() {
   const [confirmPassword, setConfirmPassword] = useState("");
 
   const [loading, setLoading] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
+
   const [error, setError] = useState("");
 
 
   // =========================================================
-  // REGISTER
+  // EMAIL VALIDATION
+  // =========================================================
+
+  const isValidEmail = (email) => {
+
+    const emailPattern =
+      /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+
+    return emailPattern.test(email);
+
+  };
+
+
+  // =========================================================
+  // NORMAL EMAIL/PASSWORD REGISTER
   // =========================================================
 
   const handleRegister = async (e) => {
@@ -45,9 +64,7 @@ function Register() {
 
     if (!name.trim()) {
 
-      setError(
-        "Please enter your full name."
-      );
+      setError("Please enter your full name.");
 
       return;
     }
@@ -57,11 +74,19 @@ function Register() {
     // Validate email
     // -------------------------------------------------------
 
-    if (!email.trim()) {
+    const cleanEmail = email.trim().toLowerCase();
 
-      setError(
-        "Please enter your email."
-      );
+    if (!cleanEmail) {
+
+      setError("Please enter your email.");
+
+      return;
+    }
+
+
+    if (!isValidEmail(cleanEmail)) {
+
+      setError("Please enter a valid email address.");
 
       return;
     }
@@ -111,13 +136,12 @@ function Register() {
       const userCredential =
         await createUserWithEmailAndPassword(
           auth,
-          email,
+          cleanEmail,
           password
         );
 
 
-      const user =
-        userCredential.user;
+      const user = userCredential.user;
 
 
       // -----------------------------------------------------
@@ -127,8 +151,7 @@ function Register() {
       await updateProfile(
         user,
         {
-          displayName:
-            name.trim()
+          displayName: name.trim()
         }
       );
 
@@ -144,25 +167,34 @@ function Register() {
           user.uid
         ),
         {
-          name:
-            name.trim(),
-
-          email:
-            email.trim(),
-
-          createdAt:
-            new Date()
+          name: name.trim(),
+          email: cleanEmail,
+          createdAt: new Date()
         }
       );
 
 
       // -----------------------------------------------------
-      // Go to dashboard
+      // Send email verification
       // -----------------------------------------------------
 
-      navigate(
-        "/dashboard"
+      await sendEmailVerification(user);
+
+
+      alert(
+        "Account created successfully!\n\n" +
+        "A verification email has been sent to " +
+        cleanEmail +
+        ".\n\n" +
+        "Please verify your email before logging in."
       );
+
+
+      // -----------------------------------------------------
+      // Go to Login page
+      // -----------------------------------------------------
+
+      navigate("/login");
 
 
     } catch (error) {
@@ -186,7 +218,9 @@ function Register() {
           "An account with this email already exists."
         );
 
-      } else if (
+      }
+
+      else if (
         error.code ===
         "auth/invalid-email"
       ) {
@@ -195,7 +229,9 @@ function Register() {
           "Please enter a valid email address."
         );
 
-      } else if (
+      }
+
+      else if (
         error.code ===
         "auth/weak-password"
       ) {
@@ -204,11 +240,14 @@ function Register() {
           "Password is too weak. Use at least 6 characters."
         );
 
-      } else {
+      }
+
+      else {
 
         setError(
           "Unable to create your account. Please try again."
         );
+
       }
 
     } finally {
@@ -216,6 +255,119 @@ function Register() {
       setLoading(false);
 
     }
+
+  };
+
+
+  // =========================================================
+  // GOOGLE REGISTER / SIGN IN
+  // =========================================================
+
+  const handleGoogleRegister = async () => {
+
+    setError("");
+    setGoogleLoading(true);
+
+
+    try {
+
+      const googleProvider =
+        new GoogleAuthProvider();
+
+
+      const result =
+        await signInWithPopup(
+          auth,
+          googleProvider
+        );
+
+
+      const user = result.user;
+
+
+      // -----------------------------------------------------
+      // Save Google user's information in Firestore
+      // -----------------------------------------------------
+
+      await setDoc(
+        doc(
+          db,
+          "users",
+          user.uid
+        ),
+        {
+          name:
+            user.displayName || "Google User",
+
+          email:
+            user.email,
+
+          photoURL:
+            user.photoURL || "",
+
+          provider:
+            "google",
+
+          updatedAt:
+            new Date()
+        },
+        {
+          merge: true
+        }
+      );
+
+
+      // -----------------------------------------------------
+      // Go to dashboard
+      // -----------------------------------------------------
+
+      navigate("/dashboard");
+
+
+    } catch (error) {
+
+      console.error(
+        "Google registration error:",
+        error
+      );
+
+
+      if (
+        error.code ===
+        "auth/popup-closed-by-user"
+      ) {
+
+        setError(
+          "Google sign-in was cancelled."
+        );
+
+      }
+
+      else if (
+        error.code ===
+        "auth/popup-blocked"
+      ) {
+
+        setError(
+          "Google sign-in popup was blocked. Please allow popups and try again."
+        );
+
+      }
+
+      else {
+
+        setError(
+          "Google registration failed. Please try again."
+        );
+
+      }
+
+    } finally {
+
+      setGoogleLoading(false);
+
+    }
+
   };
 
 
@@ -227,11 +379,13 @@ function Register() {
 
     <div className="min-h-screen bg-slate-950 text-white flex">
 
+
       {/* =====================================================
           LEFT SIDE — BRAND / INFORMATION
-          ===================================================== */}
+      ===================================================== */}
 
       <div className="hidden lg:flex lg:w-1/2 relative overflow-hidden">
+
 
         {/* Background glow */}
 
@@ -240,7 +394,8 @@ function Register() {
         <div className="absolute bottom-20 right-20 w-80 h-80 bg-blue-500/10 rounded-full blur-3xl" />
 
 
-        <div className="relative z-10 flex flex-col justify-center px-16 xl:px-24">
+        <div className="relative z-10 flex flex-col justify-start px-16 xl:px-24 pt-24 xl:pt-28">
+
 
           {/* Logo */}
 
@@ -279,6 +434,7 @@ function Register() {
           {/* Features */}
 
           <div className="mt-10 space-y-5">
+
 
             {/* Feature 1 */}
 
@@ -348,6 +504,7 @@ function Register() {
 
             </div>
 
+
           </div>
 
         </div>
@@ -357,11 +514,13 @@ function Register() {
 
       {/* =====================================================
           RIGHT SIDE — REGISTER
-          ===================================================== */}
+      ===================================================== */}
 
       <div className="w-full lg:w-1/2 flex items-center justify-center px-6 py-12">
 
+
         <div className="w-full max-w-md">
+
 
           {/* Mobile Logo */}
 
@@ -381,21 +540,27 @@ function Register() {
 
           <div className="bg-slate-900/80 border border-slate-800 rounded-3xl p-8 sm:p-10 shadow-2xl backdrop-blur-sm">
 
+
             {/* Heading */}
 
             <div className="text-center">
 
+
               <div className="inline-flex items-center justify-center w-22 h-22 rounded-2xl bg-cyan-400/10 border border-cyan-400/20 text-2xl mb-5">
+
                 <img
-  src="/logo.png"
-  alt="ReadEase AI Logo"
-  className="w-20 h-20 object-contain"
-/>
+                  src="/logo.png"
+                  alt="ReadEase AI Logo"
+                  className="w-20 h-20 object-contain"
+                />
+
               </div>
+
 
               <h1 className="text-3xl sm:text-4xl font-bold text-white">
                 Create Account
               </h1>
+
 
               <p className="text-slate-400 mt-3">
                 Join ReadEase AI and simplify reading.
@@ -409,7 +574,9 @@ function Register() {
             {error && (
 
               <div className="mt-6 bg-red-500/10 border border-red-500/30 text-red-400 rounded-xl p-3 text-sm">
+
                 {error}
+
               </div>
 
             )}
@@ -421,6 +588,7 @@ function Register() {
               onSubmit={handleRegister}
               className="mt-8 space-y-5"
             >
+
 
               {/* Full Name */}
 
@@ -434,9 +602,7 @@ function Register() {
                   type="text"
                   value={name}
                   onChange={(e) =>
-                    setName(
-                      e.target.value
-                    )
+                    setName(e.target.value)
                   }
                   placeholder="Enter your full name"
                   autoComplete="name"
@@ -458,9 +624,7 @@ function Register() {
                   type="email"
                   value={email}
                   onChange={(e) =>
-                    setEmail(
-                      e.target.value
-                    )
+                    setEmail(e.target.value)
                   }
                   placeholder="Enter your email"
                   autoComplete="email"
@@ -482,9 +646,7 @@ function Register() {
                   type="password"
                   value={password}
                   onChange={(e) =>
-                    setPassword(
-                      e.target.value
-                    )
+                    setPassword(e.target.value)
                   }
                   placeholder="Create a password"
                   autoComplete="new-password"
@@ -506,9 +668,7 @@ function Register() {
                   type="password"
                   value={confirmPassword}
                   onChange={(e) =>
-                    setConfirmPassword(
-                      e.target.value
-                    )
+                    setConfirmPassword(e.target.value)
                   }
                   placeholder="Confirm your password"
                   autoComplete="new-password"
@@ -522,7 +682,7 @@ function Register() {
 
               <button
                 type="submit"
-                disabled={loading}
+                disabled={loading || googleLoading}
                 className="w-full bg-cyan-400 text-black py-3.5 rounded-xl font-semibold hover:bg-cyan-300 transition duration-200 disabled:opacity-60 disabled:cursor-not-allowed"
               >
 
@@ -532,7 +692,43 @@ function Register() {
 
               </button>
 
+
             </form>
+
+
+            {/* OR */}
+
+            <div className="flex items-center gap-3 my-6">
+
+              <div className="flex-1 h-px bg-slate-800" />
+
+              <span className="text-slate-500 text-sm">
+                OR
+              </span>
+
+              <div className="flex-1 h-px bg-slate-800" />
+
+            </div>
+
+
+            {/* Google Register */}
+
+            <button
+              type="button"
+              onClick={handleGoogleRegister}
+              disabled={loading || googleLoading}
+              className="w-full py-3.5 rounded-xl border border-slate-700 bg-slate-800/60 text-white font-semibold hover:border-cyan-400 hover:bg-slate-800 transition duration-200 disabled:opacity-50 flex items-center justify-center gap-3"
+            >
+
+              <span className="text-lg font-bold">
+                G
+              </span>
+
+              {googleLoading
+                ? "Connecting to Google..."
+                : "Continue with Google"}
+
+            </button>
 
 
             {/* Login */}
@@ -554,6 +750,7 @@ function Register() {
 
             </div>
 
+
           </div>
 
 
@@ -570,11 +767,14 @@ function Register() {
 
           </div>
 
+
         </div>
 
       </div>
 
+
     </div>
+
   );
 }
 

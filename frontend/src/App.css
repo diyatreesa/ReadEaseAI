@@ -112,20 +112,8 @@
   margin: 32px 0 0;
 
   .logo {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  text-decoration: none;
-  color: #00c9e8;
-  font-size: 28px;
-  font-weight: 700;
-}
-
-.logo img {
-  width: 42px;
-  height: 42px;
-  object-fit: contain;
-}
+    height: 18px;
+  }
 
   a {
     color: var(--text-h);
