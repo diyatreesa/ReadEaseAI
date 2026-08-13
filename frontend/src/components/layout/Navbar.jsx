@@ -9,9 +9,15 @@ function Navbar() {
         {/* Logo */}
         <Link
           to="/"
-          className="text-4xl font-bold text-cyan-400 hover:text-cyan-300 transition"
+          className="flex items-center gap-3 text-2xl font-bold text-cyan-400 hover:text-cyan-300 transition"
         >
-          ReadEase AI
+          <img
+            src="/logo.png"
+            alt="ReadEase AI Logo"
+            className="w-14 h-14 object-contain"
+          />
+
+          <span>ReadEase AI</span>
         </Link>
 
         {/* Navigation Links */}
