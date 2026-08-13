@@ -5,6 +5,14 @@ import json
 import re
 import io
 
+
+from django.core.mail import send_mail
+from rest_framework.decorators import api_view
+from rest_framework.response import Response
+from rest_framework import status
+
+from .otp import generate_otp, store_otp, verify_otp
+
 from docx import Document
 from pypdf import PdfReader
 from reportlab.pdfgen import canvas
@@ -1187,3 +1195,362 @@ def download_simplified_text(request):
             },
             status=500
         )
+    
+@api_view(["POST"])
+def send_verification_otp(request):
+
+    email = request.data.get("email", "").strip().lower()
+
+
+    # --------------------------------------------------
+    # Validate email
+    # --------------------------------------------------
+
+    email_pattern = r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9-]+(\.[a-zA-Z0-9-]+)+$"
+
+    if not re.match(email_pattern, email):
+
+        return Response(
+            {
+                "success": False,
+                "message": "Please enter a valid email address."
+            },
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+
+    # --------------------------------------------------
+    # Generate OTP
+    # --------------------------------------------------
+
+    otp = generate_otp()
+
+
+    # --------------------------------------------------
+    # Store OTP
+    # --------------------------------------------------
+
+    store_otp(email, otp)
+
+
+    # --------------------------------------------------
+    # Send email
+    # --------------------------------------------------
+
+    try:
+
+        send_mail(
+            subject="ReadEase AI - Email Verification Code",
+
+            message=(
+                "Hello,\n\n"
+                "Your ReadEase AI verification code is:\n\n"
+                f"{otp}\n\n"
+                "This code will expire in 10 minutes.\n\n"
+                "If you did not request this code, "
+                "you can safely ignore this email.\n\n"
+                "Regards,\n"
+                "ReadEase AI Team"
+            ),
+
+            from_email=None,
+
+            recipient_list=[email],
+
+            fail_silently=False,
+        )
+
+
+        return Response(
+            {
+                "success": True,
+                "message": "Verification code sent successfully."
+            },
+            status=status.HTTP_200_OK
+        )
+
+
+    except Exception as error:
+
+        print("Email sending error:", error)
+
+        return Response(
+            {
+                "success": False,
+                "message": "Unable to send verification email."
+            },
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+@api_view(["POST"])
+def send_verification_otp(request):
+
+    email = request.data.get("email", "").strip().lower()
+
+
+    # --------------------------------------------------
+    # Validate email
+    # --------------------------------------------------
+
+    email_pattern = r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9-]+(\.[a-zA-Z0-9-]+)+$"
+
+    if not re.match(email_pattern, email):
+
+        return Response(
+            {
+                "success": False,
+                "message": "Please enter a valid email address."
+            },
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+
+    # --------------------------------------------------
+    # Generate OTP
+    # --------------------------------------------------
+
+    otp = generate_otp()
+
+
+    # --------------------------------------------------
+    # Store OTP
+    # --------------------------------------------------
+
+    store_otp(email, otp)
+
+
+    # --------------------------------------------------
+    # Send email
+    # --------------------------------------------------
+
+    try:
+
+        send_mail(
+            subject="ReadEase AI - Email Verification Code",
+
+            message=(
+                "Hello,\n\n"
+                "Your ReadEase AI verification code is:\n\n"
+                f"{otp}\n\n"
+                "This code will expire in 10 minutes.\n\n"
+                "If you did not request this code, "
+                "you can safely ignore this email.\n\n"
+                "Regards,\n"
+                "ReadEase AI Team"
+            ),
+
+            from_email=None,
+
+            recipient_list=[email],
+
+            fail_silently=False,
+        )
+
+
+        return Response(
+            {
+                "success": True,
+                "message": "Verification code sent successfully."
+            },
+            status=status.HTTP_200_OK
+        )
+
+
+    except Exception as error:
+
+        print("Email sending error:", error)
+
+        return Response(
+            {
+                "success": False,
+                "message": "Unable to send verification email."
+            },
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+    
+@api_view(["POST"])
+def verify_verification_otp(request):
+
+    email = request.data.get("email", "").strip().lower()
+    entered_otp = request.data.get("otp", "").strip()
+
+
+    # --------------------------------------------------
+    # Validate input
+    # --------------------------------------------------
+
+    if not email or not entered_otp:
+
+        return Response(
+            {
+                "success": False,
+                "message": "Email and verification code are required."
+            },
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+
+    # --------------------------------------------------
+    # Verify OTP
+    # --------------------------------------------------
+
+    verified, message = verify_otp(
+        email,
+        entered_otp
+    )
+
+
+    if verified:
+
+        return Response(
+            {
+                "success": True,
+                "message": message
+            },
+            status=status.HTTP_200_OK
+        )
+
+
+    return Response(
+        {
+            "success": False,
+            "message": message
+        },
+        status=status.HTTP_400_BAD_REQUEST
+    )
+
+# ============================================================
+# EMAIL VERIFICATION OTP
+# ============================================================
+
+@api_view(["POST"])
+def send_verification_otp(request):
+
+    email = request.data.get("email", "").strip().lower()
+
+    # --------------------------------------------------------
+    # Validate email format
+    # --------------------------------------------------------
+
+    email_pattern = r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9-]+(\.[a-zA-Z0-9-]+)+$"
+
+    if not re.match(email_pattern, email):
+
+        return Response(
+            {
+                "success": False,
+                "message": "Please enter a valid email address."
+            },
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    # --------------------------------------------------------
+    # Generate OTP
+    # --------------------------------------------------------
+
+    otp = generate_otp()
+
+    # --------------------------------------------------------
+    # Store OTP
+    # --------------------------------------------------------
+
+    store_otp(email, otp)
+
+    # --------------------------------------------------------
+    # Send OTP email
+    # --------------------------------------------------------
+
+    try:
+
+        send_mail(
+            subject="ReadEase AI - Email Verification Code",
+
+            message=(
+                "Hello,\n\n"
+                "Your ReadEase AI verification code is:\n\n"
+                f"{otp}\n\n"
+                "This code will expire in 10 minutes.\n\n"
+                "If you did not request this code, "
+                "you can safely ignore this email.\n\n"
+                "Regards,\n"
+                "ReadEase AI Team"
+            ),
+
+            from_email=None,
+
+            recipient_list=[email],
+
+            fail_silently=False,
+        )
+
+        return Response(
+            {
+                "success": True,
+                "message": "Verification code sent successfully."
+            },
+            status=status.HTTP_200_OK
+        )
+
+    except Exception as error:
+
+        print("Email sending error:", error)
+
+        return Response(
+            {
+                "success": False,
+                "message": "Unable to send verification email."
+            },
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+
+# ============================================================
+# VERIFY EMAIL OTP
+# ============================================================
+
+@api_view(["POST"])
+def verify_verification_otp(request):
+
+    email = request.data.get("email", "").strip().lower()
+
+    entered_otp = request.data.get("otp", "").strip()
+
+    # --------------------------------------------------------
+    # Check input
+    # --------------------------------------------------------
+
+    if not email or not entered_otp:
+
+        return Response(
+            {
+                "success": False,
+                "message": "Email and verification code are required."
+            },
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    # --------------------------------------------------------
+    # Verify OTP
+    # --------------------------------------------------------
+
+    verified, message = verify_otp(
+        email,
+        entered_otp
+    )
+
+    if verified:
+
+        return Response(
+            {
+                "success": True,
+                "message": message
+            },
+            status=status.HTTP_200_OK
+        )
+
+    return Response(
+        {
+            "success": False,
+            "message": message
+        },
+        status=status.HTTP_400_BAD_REQUEST
+    )

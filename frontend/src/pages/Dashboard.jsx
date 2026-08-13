@@ -63,29 +63,27 @@ try {
   const userDocSnap = await getDoc(userDocRef);
 
   if (userDocSnap.exists()) {
-    const userData = userDocSnap.data();
+  const userData = userDocSnap.data();
 
-    setUserName(
-      userData.name ||
-      currentUser.displayName ||
-      currentUser.email?.split("@")[0] ||
-      "User"
-    );
-  } else {
-    setUserName(
-      currentUser.displayName ||
-      currentUser.email?.split("@")[0] ||
-      "User"
-    );
-  }
+  setUserName(
+    currentUser.displayName ||
+    userData.name ||
+    currentUser.email?.split("@")[0] ||
+    "User"
+  );
+} else {
+  setUserName(
+    currentUser.displayName ||
+    "User"
+  );
+}
 } catch (nameError) {
   console.error("Unable to load user name:", nameError);
 
   setUserName(
-    currentUser.displayName ||
-    currentUser.email?.split("@")[0] ||
-    "User"
-  );
+  currentUser.displayName ||
+  "User"
+);
 }
 
 

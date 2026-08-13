@@ -4,16 +4,15 @@ import { Link, useNavigate } from "react-router-dom";
 import {
   createUserWithEmailAndPassword,
   updateProfile,
-  sendEmailVerification,
   GoogleAuthProvider,
-  signInWithPopup
+  signInWithPopup,
 } from "firebase/auth";
 
 import { auth, db } from "../services/firebase";
 
 import {
   doc,
-  setDoc
+  setDoc,
 } from "firebase/firestore";
 
 
@@ -21,16 +20,42 @@ function Register() {
 
   const navigate = useNavigate();
 
+
+  // =========================================================
+  // FORM STATE
+  // =========================================================
+
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
 
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
 
+
+  // =========================================================
+  // OTP STATE
+  // =========================================================
+
+  const [otp, setOtp] = useState("");
+
+  const [otpSent, setOtpSent] = useState(false);
+  const [otpVerified, setOtpVerified] = useState(false);
+
+
+  // =========================================================
+  // LOADING STATE
+  // =========================================================
+
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
 
+
+  // =========================================================
+  // ERROR / SUCCESS
+  // =========================================================
+
   const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
 
 
   // =========================================================
@@ -43,12 +68,13 @@ function Register() {
       /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
 
     return emailPattern.test(email);
-
   };
 
 
   // =========================================================
-  // NORMAL EMAIL/PASSWORD REGISTER
+  // REGISTER BUTTON
+  // FIRST CLICK = SEND OTP
+  // SECOND CLICK = VERIFY OTP + CREATE ACCOUNT
   // =========================================================
 
   const handleRegister = async (e) => {
@@ -56,82 +82,233 @@ function Register() {
     e.preventDefault();
 
     setError("");
+    setSuccess("");
+
+    const cleanEmail =
+      email.trim().toLowerCase();
 
 
-    // -------------------------------------------------------
-    // Validate name
-    // -------------------------------------------------------
+    // =======================================================
+    // STEP 1 — SEND OTP
+    // =======================================================
 
-    if (!name.trim()) {
+    if (!otpSent) {
 
-      setError("Please enter your full name.");
+      // Validate name
 
-      return;
-    }
+      if (!name.trim()) {
 
+        setError(
+          "Please enter your full name."
+        );
 
-    // -------------------------------------------------------
-    // Validate email
-    // -------------------------------------------------------
-
-    const cleanEmail = email.trim().toLowerCase();
-
-    if (!cleanEmail) {
-
-      setError("Please enter your email.");
-
-      return;
-    }
+        return;
+      }
 
 
-    if (!isValidEmail(cleanEmail)) {
+      // Validate email
 
-      setError("Please enter a valid email address.");
+      if (!cleanEmail) {
 
-      return;
-    }
+        setError(
+          "Please enter your email address."
+        );
 
-
-    // -------------------------------------------------------
-    // Validate password
-    // -------------------------------------------------------
-
-    if (password.length < 6) {
-
-      setError(
-        "Password must contain at least 6 characters."
-      );
-
-      return;
-    }
+        return;
+      }
 
 
-    // -------------------------------------------------------
-    // Confirm password
-    // -------------------------------------------------------
+      if (!isValidEmail(cleanEmail)) {
 
-    if (password !== confirmPassword) {
+        setError(
+          "Please enter a valid email address."
+        );
 
-      setError(
-        "Passwords do not match."
-      );
+        return;
+      }
+
+
+      // Validate password
+
+      if (password.length < 6) {
+
+        setError(
+          "Password must contain at least 6 characters."
+        );
+
+        return;
+      }
+
+
+      // Confirm password
+
+      if (password !== confirmPassword) {
+
+        setError(
+          "Passwords do not match."
+        );
+
+        return;
+      }
+
+
+      try {
+
+        setLoading(true);
+
+
+        // ---------------------------------------------------
+        // SEND OTP FROM DJANGO
+        // ---------------------------------------------------
+
+        const response = await fetch(
+          "http://127.0.0.1:8000/api/auth/send-otp/",
+          {
+            method: "POST",
+
+            headers: {
+              "Content-Type": "application/json",
+            },
+
+            body: JSON.stringify({
+              email: cleanEmail,
+            }),
+          }
+        );
+
+
+        const data =
+          await response.json();
+
+
+        if (!response.ok) {
+
+          setError(
+            data.message ||
+            data.detail ||
+            "Unable to send verification code."
+          );
+
+          return;
+        }
+
+
+        // OTP sent successfully
+
+        setOtpSent(true);
+
+        setSuccess(
+          "A verification code has been sent to your email."
+        );
+
+      }
+
+
+      catch (error) {
+
+        console.error(
+          "Send OTP error:",
+          error
+        );
+
+
+        setError(
+          "Unable to send verification code. Please make sure the backend server is running."
+        );
+
+      }
+
+
+      finally {
+
+        setLoading(false);
+
+      }
 
       return;
     }
 
 
     // =======================================================
-    // FIREBASE REGISTRATION
+    // STEP 2 — VERIFY OTP
     // =======================================================
+
+    if (!otp.trim()) {
+
+      setError(
+        "Please enter the verification code."
+      );
+
+      return;
+    }
+
+
+    if (!/^\d{6}$/.test(otp.trim())) {
+
+      setError(
+        "Verification code must contain 6 digits."
+      );
+
+      return;
+    }
+
 
     try {
 
       setLoading(true);
 
 
-      // -----------------------------------------------------
-      // Create Firebase account
-      // -----------------------------------------------------
+      // ---------------------------------------------------
+      // VERIFY OTP WITH DJANGO
+      // ---------------------------------------------------
+
+      const response = await fetch(
+        "http://127.0.0.1:8000/api/auth/verify-otp/",
+        {
+          method: "POST",
+
+          headers: {
+            "Content-Type": "application/json",
+          },
+
+          body: JSON.stringify({
+            email: cleanEmail,
+            otp: otp.trim(),
+          }),
+        }
+      );
+
+
+      const data =
+        await response.json();
+
+
+      // Wrong OTP
+
+      if (!response.ok) {
+
+        setError(
+          data.message ||
+          data.detail ||
+          "Incorrect verification code."
+        );
+
+        return;
+      }
+
+
+      // OTP correct
+
+      setOtpVerified(true);
+
+      setSuccess(
+        "Email verified successfully. Creating your account..."
+      );
+
+
+      // ===================================================
+      // CREATE FIREBASE ACCOUNT
+      // ===================================================
 
       const userCredential =
         await createUserWithEmailAndPassword(
@@ -141,24 +318,25 @@ function Register() {
         );
 
 
-      const user = userCredential.user;
+      const user =
+        userCredential.user;
 
 
-      // -----------------------------------------------------
-      // Store user's name in Firebase Auth
-      // -----------------------------------------------------
+      // ===================================================
+      // SAVE NAME IN FIREBASE AUTH
+      // ===================================================
 
       await updateProfile(
         user,
         {
-          displayName: name.trim()
+          displayName: name.trim(),
         }
       );
 
 
-      // -----------------------------------------------------
-      // Store user information in Firestore
-      // -----------------------------------------------------
+      // ===================================================
+      // SAVE USER IN FIRESTORE
+      // ===================================================
 
       await setDoc(
         doc(
@@ -168,46 +346,32 @@ function Register() {
         ),
         {
           name: name.trim(),
+
           email: cleanEmail,
-          createdAt: new Date()
+
+          provider: "email",
+
+          createdAt: new Date(),
         }
       );
 
 
-      // -----------------------------------------------------
-      // Send email verification
-      // -----------------------------------------------------
+      // ===================================================
+      // GO TO DASHBOARD
+      // ===================================================
 
-      await sendEmailVerification(user);
+      navigate("/dashboard");
 
-
-      alert(
-        "Account created successfully!\n\n" +
-        "A verification email has been sent to " +
-        cleanEmail +
-        ".\n\n" +
-        "Please verify your email before logging in."
-      );
+    }
 
 
-      // -----------------------------------------------------
-      // Go to Login page
-      // -----------------------------------------------------
-
-      navigate("/login");
-
-
-    } catch (error) {
+    catch (error) {
 
       console.error(
-        "Registration error:",
+        "Registration / OTP error:",
         error
       );
 
-
-      // -----------------------------------------------------
-      // Firebase error handling
-      // -----------------------------------------------------
 
       if (
         error.code ===
@@ -215,7 +379,7 @@ function Register() {
       ) {
 
         setError(
-          "An account with this email already exists."
+          "An account with this email already exists. Please login instead."
         );
 
       }
@@ -245,12 +409,15 @@ function Register() {
       else {
 
         setError(
-          "Unable to create your account. Please try again."
+          "Unable to complete registration. Please try again."
         );
 
       }
 
-    } finally {
+    }
+
+
+    finally {
 
       setLoading(false);
 
@@ -260,12 +427,14 @@ function Register() {
 
 
   // =========================================================
-  // GOOGLE REGISTER / SIGN IN
+  // GOOGLE REGISTER / LOGIN
   // =========================================================
 
   const handleGoogleRegister = async () => {
 
     setError("");
+    setSuccess("");
+
     setGoogleLoading(true);
 
 
@@ -275,6 +444,13 @@ function Register() {
         new GoogleAuthProvider();
 
 
+      // Show Google account selection
+
+      googleProvider.setCustomParameters({
+        prompt: "select_account",
+      });
+
+
       const result =
         await signInWithPopup(
           auth,
@@ -282,11 +458,12 @@ function Register() {
         );
 
 
-      const user = result.user;
+      const user =
+        result.user;
 
 
       // -----------------------------------------------------
-      // Save Google user's information in Firestore
+      // SAVE GOOGLE USER
       // -----------------------------------------------------
 
       await setDoc(
@@ -296,35 +473,41 @@ function Register() {
           user.uid
         ),
         {
+
           name:
-            user.displayName || "Google User",
+            user.displayName ||
+            "Google User",
 
           email:
             user.email,
 
           photoURL:
-            user.photoURL || "",
+            user.photoURL ||
+            "",
 
           provider:
             "google",
 
           updatedAt:
-            new Date()
+            new Date(),
+
         },
         {
-          merge: true
+          merge: true,
         }
       );
 
 
       // -----------------------------------------------------
-      // Go to dashboard
+      // DASHBOARD
       // -----------------------------------------------------
 
       navigate("/dashboard");
 
+    }
 
-    } catch (error) {
+
+    catch (error) {
 
       console.error(
         "Google registration error:",
@@ -354,6 +537,17 @@ function Register() {
 
       }
 
+      else if (
+        error.code ===
+        "auth/account-exists-with-different-credential"
+      ) {
+
+        setError(
+          "An account already exists with this email using another login method."
+        );
+
+      }
+
       else {
 
         setError(
@@ -362,13 +556,65 @@ function Register() {
 
       }
 
-    } finally {
+    }
+
+
+    finally {
 
       setGoogleLoading(false);
 
     }
 
   };
+
+
+  // =========================================================
+  // GOOGLE ICON
+  // =========================================================
+
+  const GoogleIcon = () => (
+
+    <svg
+      width="20"
+      height="20"
+      viewBox="0 0 24 24"
+      aria-hidden="true"
+    >
+
+      {/* Blue */}
+
+      <path
+        fill="#4285F4"
+        d="M21.35 12.27c0-.79-.07-1.55-.23-2.27H12v4.3h5.23a4.47 4.47 0 0 1-1.94 2.93v2.43h3.14c1.84-1.7 2.92-4.2 2.92-7.39Z"
+      />
+
+
+      {/* Green */}
+
+      <path
+        fill="#34A853"
+        d="M12 21.75c2.63 0 4.84-.87 6.45-2.36l-3.14-2.43c-.87.58-1.98.92-3.31.92-2.54 0-4.69-1.72-5.46-4.03H3.3v2.5A9.75 9.75 0 0 0 12 21.75Z"
+      />
+
+
+      {/* Yellow */}
+
+      <path
+        fill="#FBBC05"
+        d="M6.54 13.85A5.86 5.86 0 0 1 6.23 12c0-.64.11-1.26.31-1.85v-2.5H3.3A9.75 9.75 0 0 0 2.25 12c0 1.57.38 3.05 1.05 4.35l3.24-2.5Z"
+      />
+
+
+      {/* Red */}
+
+      <path
+        fill="#EA4335"
+        d="M12 6.12c1.43 0 2.71.49 3.72 1.45l2.79-2.79C16.83 3.23 14.63 2.25 12 2.25A9.75 9.75 0 0 0 3.3 7.65l3.24 2.5C7.31 7.84 9.46 6.12 12 6.12Z"
+      />
+
+    </svg>
+
+  );
 
 
   // =========================================================
@@ -381,7 +627,7 @@ function Register() {
 
 
       {/* =====================================================
-          LEFT SIDE — BRAND / INFORMATION
+          LEFT SIDE
       ===================================================== */}
 
       <div className="hidden lg:flex lg:w-1/2 relative overflow-hidden">
@@ -394,16 +640,28 @@ function Register() {
         <div className="absolute bottom-20 right-20 w-80 h-80 bg-blue-500/10 rounded-full blur-3xl" />
 
 
-        <div className="relative z-10 flex flex-col justify-start px-16 xl:px-24 pt-24 xl:pt-28">
+        {/* LEFT CONTENT */}
+
+        <div className="relative z-10 flex flex-col justify-start px-16 xl:px-24 pt-20 xl:pt-24">
 
 
           {/* Logo */}
 
           <Link
             to="/"
-            className="text-4xl font-bold text-cyan-400 hover:text-cyan-300 transition w-fit"
+            className="flex items-center gap-3 text-4xl font-bold text-cyan-400 hover:text-cyan-300 transition w-fit"
           >
-            ReadEase AI
+
+            <img
+              src="/logo.png"
+              alt="ReadEase AI Logo"
+              className="w-14 h-14 object-contain"
+            />
+
+            <span>
+              ReadEase AI
+            </span>
+
           </Link>
 
 
@@ -507,16 +765,18 @@ function Register() {
 
           </div>
 
+
         </div>
 
       </div>
 
 
+
       {/* =====================================================
-          RIGHT SIDE — REGISTER
+          RIGHT SIDE
       ===================================================== */}
 
-      <div className="w-full lg:w-1/2 flex items-center justify-center px-6 py-12">
+      <div className="w-full lg:w-1/2 flex items-start justify-center px-4 sm:px-6 py-8 lg:py-10">
 
 
         <div className="w-full max-w-md">
@@ -524,21 +784,34 @@ function Register() {
 
           {/* Mobile Logo */}
 
-          <div className="lg:hidden text-center mb-10">
+          <div className="lg:hidden text-center mb-8">
 
             <Link
               to="/"
-              className="text-3xl font-bold text-cyan-400"
+              className="flex items-center justify-center gap-2 text-3xl font-bold text-cyan-400"
             >
-              ReadEase AI
+
+              <img
+                src="/logo.png"
+                alt="ReadEase AI Logo"
+                className="w-12 h-12 object-contain"
+              />
+
+              <span>
+                ReadEase AI
+              </span>
+
             </Link>
 
           </div>
 
 
-          {/* Register Card */}
 
-          <div className="bg-slate-900/80 border border-slate-800 rounded-3xl p-8 sm:p-10 shadow-2xl backdrop-blur-sm">
+          {/* =================================================
+              REGISTER CARD
+          ================================================= */}
+
+          <div className="bg-slate-900/80 border border-slate-800 rounded-3xl p-6 sm:p-8 shadow-2xl backdrop-blur-sm">
 
 
             {/* Heading */}
@@ -546,12 +819,12 @@ function Register() {
             <div className="text-center">
 
 
-              <div className="inline-flex items-center justify-center w-22 h-22 rounded-2xl bg-cyan-400/10 border border-cyan-400/20 text-2xl mb-5">
+              <div className="inline-flex items-center justify-center w-20 h-20 rounded-2xl bg-cyan-400/10 border border-cyan-400/20 mb-5">
 
                 <img
                   src="/logo.png"
                   alt="ReadEase AI Logo"
-                  className="w-20 h-20 object-contain"
+                  className="w-16 h-16 object-contain"
                 />
 
               </div>
@@ -566,10 +839,14 @@ function Register() {
                 Join ReadEase AI and simplify reading.
               </p>
 
+
             </div>
 
 
-            {/* Error */}
+
+            {/* =================================================
+                ERROR
+            ================================================= */}
 
             {error && (
 
@@ -582,7 +859,26 @@ function Register() {
             )}
 
 
-            {/* Form */}
+
+            {/* =================================================
+                SUCCESS
+            ================================================= */}
+
+            {success && (
+
+              <div className="mt-6 bg-cyan-400/10 border border-cyan-400/20 text-cyan-300 rounded-xl p-3 text-sm">
+
+                {success}
+
+              </div>
+
+            )}
+
+
+
+            {/* =================================================
+                REGISTER FORM
+            ================================================= */}
 
             <form
               onSubmit={handleRegister}
@@ -590,7 +886,7 @@ function Register() {
             >
 
 
-              {/* Full Name */}
+              {/* FULL NAME */}
 
               <div>
 
@@ -606,13 +902,15 @@ function Register() {
                   }
                   placeholder="Enter your full name"
                   autoComplete="name"
-                  className="w-full px-4 py-3.5 rounded-xl bg-slate-800/80 border border-slate-700 text-white placeholder-slate-500 outline-none transition focus:border-cyan-400 focus:ring-2 focus:ring-cyan-400/10"
+                  disabled={otpSent}
+                  className="w-full px-4 py-3.5 rounded-xl bg-slate-800/80 border border-slate-700 text-white placeholder-slate-500 outline-none transition focus:border-cyan-400 focus:ring-2 focus:ring-cyan-400/10 disabled:opacity-60"
                 />
 
               </div>
 
 
-              {/* Email */}
+
+              {/* EMAIL */}
 
               <div>
 
@@ -628,13 +926,15 @@ function Register() {
                   }
                   placeholder="Enter your email"
                   autoComplete="email"
-                  className="w-full px-4 py-3.5 rounded-xl bg-slate-800/80 border border-slate-700 text-white placeholder-slate-500 outline-none transition focus:border-cyan-400 focus:ring-2 focus:ring-cyan-400/10"
+                  disabled={otpSent}
+                  className="w-full px-4 py-3.5 rounded-xl bg-slate-800/80 border border-slate-700 text-white placeholder-slate-500 outline-none transition focus:border-cyan-400 focus:ring-2 focus:ring-cyan-400/10 disabled:opacity-60"
                 />
 
               </div>
 
 
-              {/* Password */}
+
+              {/* PASSWORD */}
 
               <div>
 
@@ -650,13 +950,15 @@ function Register() {
                   }
                   placeholder="Create a password"
                   autoComplete="new-password"
-                  className="w-full px-4 py-3.5 rounded-xl bg-slate-800/80 border border-slate-700 text-white placeholder-slate-500 outline-none transition focus:border-cyan-400 focus:ring-2 focus:ring-cyan-400/10"
+                  disabled={otpSent}
+                  className="w-full px-4 py-3.5 rounded-xl bg-slate-800/80 border border-slate-700 text-white placeholder-slate-500 outline-none transition focus:border-cyan-400 focus:ring-2 focus:ring-cyan-400/10 disabled:opacity-60"
                 />
 
               </div>
 
 
-              {/* Confirm Password */}
+
+              {/* CONFIRM PASSWORD */}
 
               <div>
 
@@ -672,13 +974,56 @@ function Register() {
                   }
                   placeholder="Confirm your password"
                   autoComplete="new-password"
-                  className="w-full px-4 py-3.5 rounded-xl bg-slate-800/80 border border-slate-700 text-white placeholder-slate-500 outline-none transition focus:border-cyan-400 focus:ring-2 focus:ring-cyan-400/10"
+                  disabled={otpSent}
+                  className="w-full px-4 py-3.5 rounded-xl bg-slate-800/80 border border-slate-700 text-white placeholder-slate-500 outline-none transition focus:border-cyan-400 focus:ring-2 focus:ring-cyan-400/10 disabled:opacity-60"
                 />
 
               </div>
 
 
-              {/* Create Account Button */}
+
+              {/* =================================================
+                  OTP FIELD
+              ================================================= */}
+
+              {otpSent && (
+
+                <div>
+
+                  <label className="block text-sm font-medium text-slate-300 mb-2">
+                    Verification Code
+                  </label>
+
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    maxLength={6}
+                    value={otp}
+                    onChange={(e) =>
+                      setOtp(
+                        e.target.value.replace(
+                          /\D/g,
+                          ""
+                        )
+                      )
+                    }
+                    placeholder="Enter 6-digit code"
+                    className="w-full px-4 py-3.5 rounded-xl bg-slate-800/80 border border-slate-700 text-white placeholder-slate-500 outline-none transition focus:border-cyan-400 focus:ring-2 focus:ring-cyan-400/10 tracking-[0.3em] text-center"
+                  />
+
+                  <p className="text-xs text-slate-500 mt-2 text-center">
+                    A verification code has been sent to your email.
+                  </p>
+
+                </div>
+
+              )}
+
+
+
+              {/* =================================================
+                  MAIN BUTTON
+              ================================================= */}
 
               <button
                 type="submit"
@@ -687,8 +1032,16 @@ function Register() {
               >
 
                 {loading
-                  ? "Creating Account..."
-                  : "Create Account"}
+
+                  ? otpSent
+                    ? "Verifying..."
+                    : "Sending Code..."
+
+                  : otpSent
+                    ? "Verify & Create Account"
+                    : "Register"
+
+                }
 
               </button>
 
@@ -696,7 +1049,10 @@ function Register() {
             </form>
 
 
-            {/* OR */}
+
+            {/* =================================================
+                OR
+            ================================================= */}
 
             <div className="flex items-center gap-3 my-6">
 
@@ -711,27 +1067,65 @@ function Register() {
             </div>
 
 
-            {/* Google Register */}
+
+            {/* =================================================
+                GOOGLE BUTTON
+            ================================================= */}
 
             <button
               type="button"
               onClick={handleGoogleRegister}
               disabled={loading || googleLoading}
-              className="w-full py-3.5 rounded-xl border border-slate-700 bg-slate-800/60 text-white font-semibold hover:border-cyan-400 hover:bg-slate-800 transition duration-200 disabled:opacity-50 flex items-center justify-center gap-3"
+              className="
+                w-full
+                py-3.5
+                rounded-xl
+                bg-slate-800/80
+                border border-slate-700
+                text-white
+                font-semibold
+                transition duration-200
+                hover:bg-slate-800
+                hover:border-cyan-400
+                flex items-center justify-center gap-3
+                disabled:opacity-60
+                disabled:cursor-not-allowed
+              "
             >
 
-              <span className="text-lg font-bold">
-                G
-              </span>
+              {googleLoading ? (
 
-              {googleLoading
-                ? "Connecting to Google..."
-                : "Continue with Google"}
+                <>
+
+                  <div className="w-5 h-5 border-2 border-slate-500 border-t-white rounded-full animate-spin"></div>
+
+                  <span>
+                    Connecting to Google...
+                  </span>
+
+                </>
+
+              ) : (
+
+                <>
+
+                  <GoogleIcon />
+
+                  <span>
+                    Continue with Google
+                  </span>
+
+                </>
+
+              )}
 
             </button>
 
 
-            {/* Login */}
+
+            {/* =================================================
+                LOGIN
+            ================================================= */}
 
             <div className="mt-8 pt-6 border-t border-slate-800 text-center">
 
@@ -754,7 +1148,8 @@ function Register() {
           </div>
 
 
-          {/* Back to Home */}
+
+          {/* BACK TO HOME */}
 
           <div className="text-center mt-6">
 
@@ -776,6 +1171,7 @@ function Register() {
     </div>
 
   );
+
 }
 
 

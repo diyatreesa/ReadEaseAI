@@ -2,30 +2,20 @@ import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 
 import {
-  createUserWithEmailAndPassword,
-  updateProfile,
-  sendEmailVerification,
+  signInWithEmailAndPassword,
   GoogleAuthProvider,
-  signInWithPopup
+  signInWithPopup,
 } from "firebase/auth";
 
-import { auth, db } from "../services/firebase";
-
-import {
-  doc,
-  setDoc
-} from "firebase/firestore";
+import { auth } from "../services/firebase";
 
 
-function Register() {
+function Login() {
 
   const navigate = useNavigate();
 
-  const [name, setName] = useState("");
   const [email, setEmail] = useState("");
-
   const [password, setPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
 
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
@@ -34,228 +24,68 @@ function Register() {
 
 
   // =========================================================
-  // EMAIL VALIDATION
+  // EMAIL + PASSWORD LOGIN
   // =========================================================
 
-  const isValidEmail = (email) => {
-
-    const emailPattern =
-      /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
-
-    return emailPattern.test(email);
-
-  };
-
-
-  // =========================================================
-  // NORMAL EMAIL/PASSWORD REGISTER
-  // =========================================================
-
-  const handleRegister = async (e) => {
+  const handleLogin = async (e) => {
 
     e.preventDefault();
 
     setError("");
 
-
-    // -------------------------------------------------------
-    // Validate name
-    // -------------------------------------------------------
-
-    if (!name.trim()) {
-
-      setError("Please enter your full name.");
-
+    if (!email.trim() || !password) {
+      setError("Please enter your email and password.");
       return;
     }
-
-
-    // -------------------------------------------------------
-    // Validate email
-    // -------------------------------------------------------
-
-    const cleanEmail = email.trim().toLowerCase();
-
-    if (!cleanEmail) {
-
-      setError("Please enter your email.");
-
-      return;
-    }
-
-
-    if (!isValidEmail(cleanEmail)) {
-
-      setError("Please enter a valid email address.");
-
-      return;
-    }
-
-
-    // -------------------------------------------------------
-    // Validate password
-    // -------------------------------------------------------
-
-    if (password.length < 6) {
-
-      setError(
-        "Password must contain at least 6 characters."
-      );
-
-      return;
-    }
-
-
-    // -------------------------------------------------------
-    // Confirm password
-    // -------------------------------------------------------
-
-    if (password !== confirmPassword) {
-
-      setError(
-        "Passwords do not match."
-      );
-
-      return;
-    }
-
-
-    // =======================================================
-    // FIREBASE REGISTRATION
-    // =======================================================
 
     try {
 
       setLoading(true);
 
-
-      // -----------------------------------------------------
-      // Create Firebase account
-      // -----------------------------------------------------
-
-      const userCredential =
-        await createUserWithEmailAndPassword(
-          auth,
-          cleanEmail,
-          password
-        );
-
-
-      const user = userCredential.user;
-      if (!user.emailVerified) {
-
-  setError(
-    "Please verify your email before logging in. Check your inbox or spam folder."
-  );
-
-  return;
-}
-
-
-      // -----------------------------------------------------
-      // Store user's name in Firebase Auth
-      // -----------------------------------------------------
-
-      await updateProfile(
-        user,
-        {
-          displayName: name.trim()
-        }
+      await signInWithEmailAndPassword(
+        auth,
+        email.trim(),
+        password
       );
 
-
-      // -----------------------------------------------------
-      // Store user information in Firestore
-      // -----------------------------------------------------
-
-      await setDoc(
-        doc(
-          db,
-          "users",
-          user.uid
-        ),
-        {
-          name: name.trim(),
-          email: cleanEmail,
-          createdAt: new Date()
-        }
-      );
-
-
-      // -----------------------------------------------------
-      // Send email verification
-      // -----------------------------------------------------
-
-      await sendEmailVerification(user);
-
-
-      alert(
-        "Account created successfully!\n\n" +
-        "A verification email has been sent to " +
-        cleanEmail +
-        ".\n\n" +
-        "Please verify your email before logging in."
-      );
-
-
-      // -----------------------------------------------------
-      // Go to Login page
-      // -----------------------------------------------------
-
-      navigate("/login");
-
+      navigate("/dashboard");
 
     } catch (error) {
 
-      console.error(
-        "Registration error:",
-        error
-      );
+      console.error("Login error:", error);
 
+      switch (error.code) {
 
-      // -----------------------------------------------------
-      // Firebase error handling
-      // -----------------------------------------------------
+        case "auth/invalid-credential":
+          setError("Invalid email or password.");
+          break;
 
-      if (
-        error.code ===
-        "auth/email-already-in-use"
-      ) {
+        case "auth/user-not-found":
+          setError("No account was found with this email.");
+          break;
 
-        setError(
-          "An account with this email already exists."
-        );
+        case "auth/wrong-password":
+          setError("Incorrect password.");
+          break;
 
-      }
+        case "auth/invalid-email":
+          setError("Please enter a valid email address.");
+          break;
 
-      else if (
-        error.code ===
-        "auth/invalid-email"
-      ) {
+        case "auth/too-many-requests":
+          setError(
+            "Too many unsuccessful attempts. Please try again later."
+          );
+          break;
 
-        setError(
-          "Please enter a valid email address."
-        );
+        case "auth/network-request-failed":
+          setError(
+            "Network error. Please check your internet connection."
+          );
+          break;
 
-      }
-
-      else if (
-        error.code ===
-        "auth/weak-password"
-      ) {
-
-        setError(
-          "Password is too weak. Use at least 6 characters."
-        );
-
-      }
-
-      else {
-
-        setError(
-          "Unable to create your account. Please try again."
-        );
-
+        default:
+          setError("Unable to login. Please try again.");
       }
 
     } finally {
@@ -263,111 +93,70 @@ function Register() {
       setLoading(false);
 
     }
-
   };
 
 
   // =========================================================
-  // GOOGLE REGISTER / SIGN IN
+  // GOOGLE LOGIN
   // =========================================================
 
-  const handleGoogleRegister = async () => {
+  const handleGoogleLogin = async () => {
 
     setError("");
-    setGoogleLoading(true);
-
 
     try {
 
-      const googleProvider =
-        new GoogleAuthProvider();
+      setGoogleLoading(true);
 
+      const provider = new GoogleAuthProvider();
 
-      const result =
-        await signInWithPopup(
-          auth,
-          googleProvider
-        );
+      provider.setCustomParameters({
+        prompt: "select_account",
+      });
 
-
-      const user = result.user;
-
-
-      // -----------------------------------------------------
-      // Save Google user's information in Firestore
-      // -----------------------------------------------------
-
-      await setDoc(
-        doc(
-          db,
-          "users",
-          user.uid
-        ),
-        {
-          name:
-            user.displayName || "Google User",
-
-          email:
-            user.email,
-
-          photoURL:
-            user.photoURL || "",
-
-          provider:
-            "google",
-
-          updatedAt:
-            new Date()
-        },
-        {
-          merge: true
-        }
+      await signInWithPopup(
+        auth,
+        provider
       );
-
-
-      // -----------------------------------------------------
-      // Go to dashboard
-      // -----------------------------------------------------
 
       navigate("/dashboard");
 
-
     } catch (error) {
 
-      console.error(
-        "Google registration error:",
-        error
-      );
+      console.error("Google login error:", error);
 
+      switch (error.code) {
 
-      if (
-        error.code ===
-        "auth/popup-closed-by-user"
-      ) {
+        case "auth/popup-closed-by-user":
+          setError("Google sign-in was cancelled.");
+          break;
 
-        setError(
-          "Google sign-in was cancelled."
-        );
+        case "auth/popup-blocked":
+          setError(
+            "Google sign-in popup was blocked. Please allow popups for this site."
+          );
+          break;
 
-      }
+        case "auth/cancelled-popup-request":
+          setError("Google sign-in was cancelled.");
+          break;
 
-      else if (
-        error.code ===
-        "auth/popup-blocked"
-      ) {
+        case "auth/account-exists-with-different-credential":
+          setError(
+            "An account already exists with this email using another login method."
+          );
+          break;
 
-        setError(
-          "Google sign-in popup was blocked. Please allow popups and try again."
-        );
+        case "auth/network-request-failed":
+          setError(
+            "Network error. Please check your internet connection."
+          );
+          break;
 
-      }
-
-      else {
-
-        setError(
-          "Google registration failed. Please try again."
-        );
-
+        default:
+          setError(
+            "Unable to sign in with Google. Please try again."
+          );
       }
 
     } finally {
@@ -375,8 +164,53 @@ function Register() {
       setGoogleLoading(false);
 
     }
-
   };
+
+
+  // =========================================================
+  // GOOGLE ICON
+  // =========================================================
+
+  const GoogleIcon = () => (
+
+    <svg
+      width="20"
+      height="20"
+      viewBox="0 0 24 24"
+      aria-hidden="true"
+    >
+
+      {/* Blue */}
+
+      <path
+        fill="#4285F4"
+        d="M21.35 12.27c0-.79-.07-1.55-.23-2.27H12v4.3h5.23a4.47 4.47 0 0 1-1.94 2.93v2.43h3.14c1.84-1.7 2.92-4.2 2.92-7.39Z"
+      />
+
+      {/* Green */}
+
+      <path
+        fill="#34A853"
+        d="M12 21.75c2.63 0 4.84-.87 6.45-2.36l-3.14-2.43c-.87.58-1.98.92-3.31.92-2.54 0-4.69-1.72-5.46-4.03H3.3v2.5A9.75 9.75 0 0 0 12 21.75Z"
+      />
+
+      {/* Yellow */}
+
+      <path
+        fill="#FBBC05"
+        d="M6.54 13.85A5.86 5.86 0 0 1 6.23 12c0-.64.11-1.26.31-1.85v-2.5H3.3A9.75 9.75 0 0 0 2.25 12c0 1.57.38 3.05 1.05 4.35l3.24-2.5Z"
+      />
+
+      {/* Red */}
+
+      <path
+        fill="#EA4335"
+        d="M12 6.12c1.43 0 2.71.49 3.72 1.45l2.79-2.79C16.83 3.23 14.63 2.25 12 2.25A9.75 9.75 0 0 0 3.3 7.65l3.24 2.5C7.31 7.84 9.46 6.12 12 6.12Z"
+      />
+
+    </svg>
+
+  );
 
 
   // =========================================================
@@ -394,7 +228,6 @@ function Register() {
 
       <div className="hidden lg:flex lg:w-1/2 relative overflow-hidden">
 
-
         {/* Background glow */}
 
         <div className="absolute top-20 left-20 w-72 h-72 bg-cyan-400/10 rounded-full blur-3xl" />
@@ -402,64 +235,91 @@ function Register() {
         <div className="absolute bottom-20 right-20 w-80 h-80 bg-blue-500/10 rounded-full blur-3xl" />
 
 
-        <div className="relative z-10 flex flex-col justify-center px-16 xl:px-24">
+        {/* =================================================
+            LEFT CONTENT
+
+            Changed from justify-center to justify-start
+            so the content sits higher on the page.
+        ================================================= */}
+
+        <div className="relative z-10 flex flex-col justify-start px-16 xl:px-24 pt-10 xl:pt-14">
 
 
-          {/* Logo */}
+          {/* =================================================
+              LOGO
+          ================================================= */}
 
           <Link
             to="/"
-            className="text-4xl font-bold text-cyan-400 hover:text-cyan-300 transition w-fit"
+            className="flex items-center gap-3 w-fit"
           >
-            ReadEase AI
+
+            <img
+              src="/logo.png"
+              alt="ReadEase AI Logo"
+              className="w-12 h-12 object-contain"
+            />
+
+            <span className="text-4xl font-bold text-cyan-400">
+              ReadEase AI
+            </span>
+
           </Link>
 
 
-          {/* Heading */}
+          {/* =================================================
+              HEADING
+          ================================================= */}
 
           <h2 className="text-5xl xl:text-6xl font-bold leading-tight mt-10">
 
-            Start making
+            Make complex text
 
             <span className="block text-cyan-400">
-              reading easier.
+              easier to understand.
             </span>
 
           </h2>
 
 
-          {/* Description */}
+          {/* =================================================
+              DESCRIPTION
+          ================================================= */}
 
           <p className="text-slate-400 text-lg leading-relaxed mt-6 max-w-xl">
 
-            Create your ReadEase AI account and make
-            difficult English easier to understand,
-            one text at a time.
+            ReadEase AI transforms difficult English into
+            clear, easy-to-read language while preserving
+            the original meaning.
 
           </p>
 
 
-          {/* Features */}
+          {/* =================================================
+              FEATURES
+          ================================================= */}
 
-          <div className="mt-10 space-y-5">
+          <div className="mt-9 space-y-5">
 
 
-            {/* Feature 1 */}
+            {/* =================================================
+                FEATURE 1
+            ================================================= */}
 
             <div className="flex items-center gap-4">
 
-              <div className="w-10 h-10 rounded-xl bg-cyan-400/10 border border-cyan-400/20 flex items-center justify-center text-cyan-400">
+              <div className="w-10 h-10 rounded-xl bg-cyan-400/10 border border-cyan-400/20 flex items-center justify-center text-cyan-400 text-lg">
                 ✓
               </div>
 
               <div>
 
                 <p className="font-semibold">
-                  Simplify at Your Level
+                  AI Text Simplification
                 </p>
 
                 <p className="text-sm text-slate-500">
-                  Choose Beginner, Intermediate, or Advanced.
+                  Make difficult text easier to read.
                 </p>
 
               </div>
@@ -467,22 +327,24 @@ function Register() {
             </div>
 
 
-            {/* Feature 2 */}
+            {/* =================================================
+                FEATURE 2
+            ================================================= */}
 
             <div className="flex items-center gap-4">
 
-              <div className="w-10 h-10 rounded-xl bg-cyan-400/10 border border-cyan-400/20 flex items-center justify-center text-cyan-400">
+              <div className="w-10 h-10 rounded-xl bg-cyan-400/10 border border-cyan-400/20 flex items-center justify-center text-cyan-400 text-lg">
                 ✓
               </div>
 
               <div>
 
                 <p className="font-semibold">
-                  Track Your History
+                  Difficult Word Detection
                 </p>
 
                 <p className="text-sm text-slate-500">
-                  Keep your previous simplifications in one place.
+                  Identify complex vocabulary instantly.
                 </p>
 
               </div>
@@ -490,22 +352,24 @@ function Register() {
             </div>
 
 
-            {/* Feature 3 */}
+            {/* =================================================
+                FEATURE 3
+            ================================================= */}
 
             <div className="flex items-center gap-4">
 
-              <div className="w-10 h-10 rounded-xl bg-cyan-400/10 border border-cyan-400/20 flex items-center justify-center text-cyan-400">
+              <div className="w-10 h-10 rounded-xl bg-cyan-400/10 border border-cyan-400/20 flex items-center justify-center text-cyan-400 text-lg">
                 ✓
               </div>
 
               <div>
 
                 <p className="font-semibold">
-                  Listen and Learn
+                  Text-to-Speech
                 </p>
 
                 <p className="text-sm text-slate-500">
-                  Listen to both original and simplified text.
+                  Listen to your original and simplified text.
                 </p>
 
               </div>
@@ -514,70 +378,92 @@ function Register() {
 
 
           </div>
+
 
         </div>
 
       </div>
 
 
+
       {/* =====================================================
-          RIGHT SIDE — REGISTER
+          RIGHT SIDE — LOGIN
       ===================================================== */}
 
       <div className="w-full lg:w-1/2 flex items-center justify-center px-6 py-12">
 
-
         <div className="w-full max-w-md">
 
 
-          {/* Mobile Logo */}
+          {/* =================================================
+              MOBILE LOGO
+          ================================================= */}
 
-          <div className="lg:hidden text-center mb-10">
+          <div className="lg:hidden text-center mb-8">
 
             <Link
               to="/"
-              className="text-3xl font-bold text-cyan-400"
+              className="inline-flex items-center gap-2"
             >
-              ReadEase AI
+
+              <img
+                src="/logo.png"
+                alt="ReadEase AI Logo"
+                className="w-12 h-12 object-contain"
+              />
+
+              <span className="text-3xl font-bold text-cyan-400">
+                ReadEase AI
+              </span>
+
             </Link>
 
           </div>
 
 
-          {/* Register Card */}
+
+          {/* =================================================
+              LOGIN CARD
+          ================================================= */}
 
           <div className="bg-slate-900/80 border border-slate-800 rounded-3xl p-8 sm:p-10 shadow-2xl backdrop-blur-sm">
 
 
-            {/* Heading */}
+            {/* =================================================
+                HEADING
+            ================================================= */}
 
             <div className="text-center">
 
 
-              <div className="inline-flex items-center justify-center w-22 h-22 rounded-2xl bg-cyan-400/10 border border-cyan-400/20 text-2xl mb-5">
+              <div className="inline-flex items-center justify-center w-20 h-20 rounded-2xl bg-cyan-400/10 border border-cyan-400/20 mb-5">
 
                 <img
                   src="/logo.png"
                   alt="ReadEase AI Logo"
-                  className="w-20 h-20 object-contain"
+                  className="w-16 h-16 object-contain"
                 />
 
               </div>
 
 
               <h1 className="text-3xl sm:text-4xl font-bold text-white">
-                Create Account
+                Welcome Back
               </h1>
 
 
               <p className="text-slate-400 mt-3">
-                Join ReadEase AI and simplify reading.
+                Login to continue using ReadEase AI
               </p>
+
 
             </div>
 
 
-            {/* Error */}
+
+            {/* =================================================
+                ERROR MESSAGE
+            ================================================= */}
 
             {error && (
 
@@ -590,37 +476,18 @@ function Register() {
             )}
 
 
-            {/* Form */}
+
+            {/* =================================================
+                EMAIL LOGIN FORM
+            ================================================= */}
 
             <form
-              onSubmit={handleRegister}
+              onSubmit={handleLogin}
               className="mt-8 space-y-5"
             >
 
 
-              {/* Full Name */}
-
-              <div>
-
-                <label className="block text-sm font-medium text-slate-300 mb-2">
-                  Full Name
-                </label>
-
-                <input
-                  type="text"
-                  value={name}
-                  onChange={(e) =>
-                    setName(e.target.value)
-                  }
-                  placeholder="Enter your full name"
-                  autoComplete="name"
-                  className="w-full px-4 py-3.5 rounded-xl bg-slate-800/80 border border-slate-700 text-white placeholder-slate-500 outline-none transition focus:border-cyan-400 focus:ring-2 focus:ring-cyan-400/10"
-                />
-
-              </div>
-
-
-              {/* Email */}
+              {/* EMAIL */}
 
               <div>
 
@@ -631,18 +498,21 @@ function Register() {
                 <input
                   type="email"
                   value={email}
-                  onChange={(e) =>
-                    setEmail(e.target.value)
-                  }
+                  onChange={(e) => {
+                    setEmail(e.target.value);
+                    setError("");
+                  }}
                   placeholder="Enter your email"
                   autoComplete="email"
-                  className="w-full px-4 py-3.5 rounded-xl bg-slate-800/80 border border-slate-700 text-white placeholder-slate-500 outline-none transition focus:border-cyan-400 focus:ring-2 focus:ring-cyan-400/10"
+                  disabled={loading || googleLoading}
+                  className="w-full px-4 py-3.5 rounded-xl bg-slate-800/80 border border-slate-700 text-white placeholder-slate-500 outline-none transition focus:border-cyan-400 focus:ring-2 focus:ring-cyan-400/10 disabled:opacity-60"
                 />
 
               </div>
 
 
-              {/* Password */}
+
+              {/* PASSWORD */}
 
               <div>
 
@@ -653,40 +523,41 @@ function Register() {
                 <input
                   type="password"
                   value={password}
-                  onChange={(e) =>
-                    setPassword(e.target.value)
-                  }
-                  placeholder="Create a password"
-                  autoComplete="new-password"
-                  className="w-full px-4 py-3.5 rounded-xl bg-slate-800/80 border border-slate-700 text-white placeholder-slate-500 outline-none transition focus:border-cyan-400 focus:ring-2 focus:ring-cyan-400/10"
+                  onChange={(e) => {
+                    setPassword(e.target.value);
+                    setError("");
+                  }}
+                  placeholder="Enter your password"
+                  autoComplete="current-password"
+                  disabled={loading || googleLoading}
+                  className="w-full px-4 py-3.5 rounded-xl bg-slate-800/80 border border-slate-700 text-white placeholder-slate-500 outline-none transition focus:border-cyan-400 focus:ring-2 focus:ring-cyan-400/10 disabled:opacity-60"
                 />
 
               </div>
 
 
-              {/* Confirm Password */}
 
-              <div>
+              {/* FORGOT PASSWORD */}
 
-                <label className="block text-sm font-medium text-slate-300 mb-2">
-                  Confirm Password
-                </label>
+              <div className="flex justify-end">
 
-                <input
-                  type="password"
-                  value={confirmPassword}
-                  onChange={(e) =>
-                    setConfirmPassword(e.target.value)
-                  }
-                  placeholder="Confirm your password"
-                  autoComplete="new-password"
-                  className="w-full px-4 py-3.5 rounded-xl bg-slate-800/80 border border-slate-700 text-white placeholder-slate-500 outline-none transition focus:border-cyan-400 focus:ring-2 focus:ring-cyan-400/10"
-                />
+                <button
+                  type="button"
+                  className="text-sm text-cyan-400 hover:text-cyan-300 transition"
+                  onClick={() => {
+                    alert(
+                      "Password reset will be added next."
+                    );
+                  }}
+                >
+                  Forgot Password?
+                </button>
 
               </div>
 
 
-              {/* Create Account Button */}
+
+              {/* EMAIL LOGIN BUTTON */}
 
               <button
                 type="submit"
@@ -695,8 +566,9 @@ function Register() {
               >
 
                 {loading
-                  ? "Creating Account..."
-                  : "Create Account"}
+                  ? "Logging in..."
+                  : "Login"
+                }
 
               </button>
 
@@ -704,54 +576,97 @@ function Register() {
             </form>
 
 
-            {/* OR */}
 
-            <div className="flex items-center gap-3 my-6">
+            {/* =================================================
+                OR DIVIDER
+            ================================================= */}
 
-              <div className="flex-1 h-px bg-slate-800" />
+            <div className="flex items-center gap-4 my-7">
 
-              <span className="text-slate-500 text-sm">
+              <div className="flex-1 h-px bg-slate-800"></div>
+
+              <span className="text-sm text-slate-500">
                 OR
               </span>
 
-              <div className="flex-1 h-px bg-slate-800" />
+              <div className="flex-1 h-px bg-slate-800"></div>
 
             </div>
 
 
-            {/* Google Register */}
+
+            {/* =================================================
+                GOOGLE LOGIN
+            ================================================= */}
 
             <button
               type="button"
-              onClick={handleGoogleRegister}
+              onClick={handleGoogleLogin}
               disabled={loading || googleLoading}
-              className="w-full py-3.5 rounded-xl border border-slate-700 bg-slate-800/60 text-white font-semibold hover:border-cyan-400 hover:bg-slate-800 transition duration-200 disabled:opacity-50 flex items-center justify-center gap-3"
+              className="
+                w-full
+                bg-slate-800/80
+                border border-slate-700
+                text-white
+                py-3.5
+                rounded-xl
+                font-semibold
+                hover:bg-slate-700
+                hover:border-cyan-400
+                transition duration-200
+                flex items-center
+                justify-center
+                gap-3
+                disabled:opacity-60
+                disabled:cursor-not-allowed
+              "
             >
 
-              <span className="text-lg font-bold">
-                G
-              </span>
+              {googleLoading ? (
 
-              {googleLoading
-                ? "Connecting to Google..."
-                : "Continue with Google"}
+                <>
+
+                  <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+
+                  <span>
+                    Signing in with Google...
+                  </span>
+
+                </>
+
+              ) : (
+
+                <>
+
+                  <GoogleIcon />
+
+                  <span>
+                    Continue with Google
+                  </span>
+
+                </>
+
+              )}
 
             </button>
 
 
-            {/* Login */}
+
+            {/* =================================================
+                REGISTER
+            ================================================= */}
 
             <div className="mt-8 pt-6 border-t border-slate-800 text-center">
 
               <p className="text-slate-400 text-sm">
 
-                Already have an account?{" "}
+                Don't have an account?{" "}
 
                 <Link
-                  to="/login"
+                  to="/register"
                   className="text-cyan-400 hover:text-cyan-300 font-medium transition"
                 >
-                  Login
+                  Create Account
                 </Link>
 
               </p>
@@ -762,7 +677,10 @@ function Register() {
           </div>
 
 
-          {/* Back to Home */}
+
+          {/* =================================================
+              BACK TO HOME
+          ================================================= */}
 
           <div className="text-center mt-6">
 
@@ -784,7 +702,8 @@ function Register() {
     </div>
 
   );
+
 }
 
 
-export default Register;
+export default Login;

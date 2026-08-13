@@ -6,10 +6,7 @@ import {
   Navigate
 } from "react-router-dom";
 
-import {
-  onAuthStateChanged
-} from "firebase/auth";
-
+import { onAuthStateChanged } from "firebase/auth";
 import { auth } from "./services/firebase";
 
 import Home from "./pages/Home";
@@ -35,27 +32,12 @@ function ProtectedRoute({ user, children }) {
 
 
 // =====================================================
-// PUBLIC ROUTE
-// =====================================================
-
-function PublicRoute({ user, children }) {
-
-  if (user) {
-    return <Navigate to="/dashboard" replace />;
-  }
-
-  return children;
-}
-
-
-// =====================================================
 // APP
 // =====================================================
 
 function App() {
 
   const [user, setUser] = useState(null);
-
   const [loading, setLoading] = useState(true);
 
 
@@ -69,15 +51,14 @@ function App() {
       auth,
       (currentUser) => {
 
-        setUser(currentUser);
+        console.log("Firebase user:", currentUser);
 
+        setUser(currentUser);
         setLoading(false);
 
       }
     );
 
-
-    // Cleanup Firebase listener
     return () => unsubscribe();
 
   }, []);
@@ -120,9 +101,7 @@ function App() {
 
       <Routes>
 
-        {/* ========================================= */}
         {/* HOME */}
-        {/* ========================================= */}
 
         <Route
           path="/"
@@ -130,37 +109,23 @@ function App() {
         />
 
 
-        {/* ========================================= */}
         {/* LOGIN */}
-        {/* ========================================= */}
 
         <Route
           path="/login"
-          element={
-            <PublicRoute user={user}>
-              <Login />
-            </PublicRoute>
-          }
+          element={<Login />}
         />
 
 
-        {/* ========================================= */}
         {/* REGISTER */}
-        {/* ========================================= */}
 
         <Route
           path="/register"
-          element={
-            <PublicRoute user={user}>
-              <Register />
-            </PublicRoute>
-          }
+          element={<Register />}
         />
 
 
-        {/* ========================================= */}
         {/* DASHBOARD */}
-        {/* ========================================= */}
 
         <Route
           path="/dashboard"
@@ -172,9 +137,7 @@ function App() {
         />
 
 
-        {/* ========================================= */}
         {/* SIMPLIFY */}
-        {/* ========================================= */}
 
         <Route
           path="/simplify"
@@ -186,9 +149,7 @@ function App() {
         />
 
 
-        {/* ========================================= */}
         {/* HISTORY */}
-        {/* ========================================= */}
 
         <Route
           path="/history"
@@ -200,9 +161,7 @@ function App() {
         />
 
 
-        {/* ========================================= */}
         {/* UNKNOWN URL */}
-        {/* ========================================= */}
 
         <Route
           path="*"

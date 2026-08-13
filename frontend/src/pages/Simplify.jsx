@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import {
@@ -54,6 +54,14 @@ function Simplify() {
   const [readingTime, setReadingTime] =
     useState("--");
 
+  useEffect(() => {
+    return () => {
+      if ("speechSynthesis" in window) {
+        window.speechSynthesis.cancel();
+      }
+    };
+  }, []);
+
   // =====================================================
   // FILE UPLOAD
   // =====================================================
@@ -65,15 +73,28 @@ function Simplify() {
       return;
     }
 
+    const extension = `.${file.name.split(".").pop()?.toLowerCase()}`;
+    const allowedExtensions = [".pdf", ".docx", ".txt"];
+
+    if (!allowedExtensions.includes(extension)) {
+      setSelectedFile(null);
+      setError("Please upload a PDF, DOCX, or TXT file.");
+      event.target.value = "";
+      return;
+    }
+
     setSelectedFile(file);
     setError("");
 
-    // For TXT files, immediately show the content
-    if (file.name.toLowerCase().endsWith(".txt")) {
+    if (extension === ".txt") {
       const reader = new FileReader();
 
       reader.onload = (e) => {
-        setText(e.target.result || "");
+        setText(String(e.target?.result || ""));
+      };
+
+      reader.onerror = () => {
+        setError("Unable to read the TXT file.");
       };
 
       reader.readAsText(file);
@@ -85,21 +106,17 @@ function Simplify() {
   // =====================================================
 
   const speakText = (content) => {
-    if (!content) {
+    if (!content || !("speechSynthesis" in window)) {
       return;
     }
 
     window.speechSynthesis.cancel();
 
-    const utterance =
-      new SpeechSynthesisUtterance(content);
-
+    const utterance = new SpeechSynthesisUtterance(content);
     utterance.rate = 0.9;
     utterance.pitch = 1;
 
-    window.speechSynthesis.speak(
-      utterance
-    );
+    window.speechSynthesis.speak(utterance);
   };
 
   // =====================================================
@@ -123,6 +140,11 @@ function Simplify() {
   // =====================================================
   // SIMPLIFY TEXT
   // =====================================================
+
+  const toNumberOrFallback = (value, fallback = 0) => {
+    const number = Number(value);
+    return Number.isFinite(number) ? number : fallback;
+  };
 
   const handleSimplify = async () => {
     setError("");
@@ -179,42 +201,48 @@ function Simplify() {
         }
       );
 
+      let data = {};
+
+      try {
+        data = await response.json();
+      } catch {
+        throw new Error("The server returned an invalid response.");
+      }
+
       if (!response.ok) {
         throw new Error(
-          `Request failed with status ${response.status}`
+          data?.error ||
+            data?.message ||
+            `Request failed with status ${response.status}`
         );
       }
 
-      const data = await response.json();
-
-      console.log(
-        "API RESPONSE:",
-        data
-      );
+      console.log("API RESPONSE:", data);
 
       // =================================================
       // GET RESPONSE OBJECT
       // =================================================
 
       const result =
-        data.result ||
-        data;
+        data?.result && typeof data.result === "object"
+          ? data.result
+          : data;
 
       // =================================================
       // ORIGINAL TEXT
       // =================================================
 
-      const original =
-        result.original_text ||
-        text;
+      const original = String(
+        result?.original_text ?? text ?? ""
+      );
 
       // =================================================
       // SIMPLIFIED TEXT
       // =================================================
 
-      const simplified =
-        result.simplified_text ||
-        "";
+      const simplified = String(
+        result?.simplified_text ?? ""
+      );
 
       setText(original);
 
@@ -240,14 +268,14 @@ function Simplify() {
 
       setBeforeReadability(
         result.before_readability ??
-          result.before_readability_score ??
-          "--"
+        result.before_readability_score ??
+        "--"
       );
 
       setAfterReadability(
         result.after_readability ??
-          result.after_readability_score ??
-          "--"
+        result.after_readability_score ??
+        "--"
       );
 
       // =================================================
@@ -256,12 +284,12 @@ function Simplify() {
 
       setBeforeGrade(
         result.before_grade ??
-          "--"
+        "--"
       );
 
       setAfterGrade(
         result.after_grade ??
-          "--"
+        "--"
       );
 
       // =================================================
@@ -270,7 +298,7 @@ function Simplify() {
 
       setReadabilityImprovement(
         result.readability_improvement ??
-          "--"
+        "--"
       );
 
       // =================================================
@@ -279,7 +307,7 @@ function Simplify() {
 
       setGrammarScore(
         result.grammar_score ??
-          "--"
+        "--"
       );
 
       // =================================================
@@ -288,7 +316,7 @@ function Simplify() {
 
       setReadingTime(
         result.reading_time ??
-          "--"
+        "--"
       );
 
       // =================================================
@@ -319,29 +347,31 @@ function Simplify() {
                 level,
 
               beforeReadability:
-                Number(
-                  result.before_readability
-                ) || 0,
+                toNumberOrFallback(
+                  result.before_readability ??
+                    result.before_readability_score
+                ),
 
               afterReadability:
-                Number(
-                  result.after_readability
-                ) || 0,
+                toNumberOrFallback(
+                  result.after_readability ??
+                    result.after_readability_score
+                ),
 
               readabilityImprovement:
-                Number(
+                toNumberOrFallback(
                   result.readability_improvement
-                ) || 0,
+                ),
 
               beforeGrade:
-                Number(
+                toNumberOrFallback(
                   result.before_grade
-                ) || 0,
+                ),
 
               afterGrade:
-                Number(
+                toNumberOrFallback(
                   result.after_grade
-                ) || 0,
+                ),
 
               grammarScore:
                 result.grammar_score ??
@@ -352,9 +382,7 @@ function Simplify() {
                 "--",
 
               difficultWords:
-                Array.isArray(
-                  result.difficult_words
-                )
+                Array.isArray(result.difficult_words)
                   ? result.difficult_words
                   : [],
 
@@ -425,49 +453,51 @@ function Simplify() {
     }
 
     if (
-      !Array.isArray(
-        difficultWords
-      ) ||
+      !Array.isArray(difficultWords) ||
       difficultWords.length === 0
     ) {
       return text;
     }
 
-    const mappings =
-      difficultWords
-        .map((item) => ({
-          word:
-            item.word ||
-            "",
-          replacement:
-            item.replacement ||
-            "",
-        }))
-        .filter(
-          (item) =>
-            item.word.trim()
-        );
+    const mappings = difficultWords
+      .map((item) => ({
+        word: item.word || "",
+        replacement: item.replacement || "",
+      }))
+      .filter(
+        (item) =>
+          item.word.trim()
+      );
 
-    if (
-      mappings.length === 0
-    ) {
+    if (mappings.length === 0) {
       return text;
     }
 
-    const escapedWords =
-      mappings.map(
-        (item) =>
-          item.word.replace(
-            /[.*+?^${}()|[\]\\]/g,
-            "\\$&"
-          )
+    // Sort longest words first.
+    // This prevents shorter words from interfering
+    // with longer words.
+    const escapedWords = mappings
+      .sort(
+        (a, b) =>
+          b.word.length -
+          a.word.length
+      )
+      .map((item) =>
+        item.word.replace(
+          /[.*+?^${}()|[\]\\]/g,
+          "\\$&"
+        )
       );
 
-    const regex =
-      new RegExp(
-        `(${escapedWords.join("|")})`,
-        "gi"
-      );
+    // IMPORTANT:
+    // \b makes sure only complete words are matched.
+    //
+    // Example:
+    // "is" will NOT match inside "this".
+    const regex = new RegExp(
+      `\\b(${escapedWords.join("|")})\\b`,
+      "gi"
+    );
 
     const parts =
       text.split(regex);
@@ -516,54 +546,62 @@ function Simplify() {
     }
 
     if (
-      !Array.isArray(
-        difficultWords
-      ) ||
+      !Array.isArray(difficultWords) ||
       difficultWords.length === 0
     ) {
       return simplifiedText;
     }
 
-    const mappings =
-      difficultWords
-        .map((item) => ({
-          word:
-            item.word ||
-            "",
-          replacement:
-            item.replacement ||
-            "",
-        }))
-        .filter(
-          (item) =>
-            item.replacement.trim()
-        );
+    const mappings = difficultWords
+      .map((item) => ({
+        word: item.word || "",
+        replacement: item.replacement || "",
+      }))
+      .filter(
+        (item) =>
+          item.replacement.trim()
+      );
 
-    if (
-      mappings.length === 0
-    ) {
+    if (mappings.length === 0) {
       return simplifiedText;
     }
 
-    const escapedWords =
-      mappings.map(
-        (item) =>
-          item.replacement.replace(
-            /[.*+?^${}()|[\]\\]/g,
-            "\\$&"
-          )
+    // Sort longest replacements first.
+    const escapedWords = mappings
+      .sort(
+        (a, b) =>
+          b.replacement.length -
+          a.replacement.length
+      )
+      .map((item) =>
+        item.replacement.replace(
+          /[.*+?^${}()|[\]\\]/g,
+          "\\$&"
+        )
       );
 
-    const regex =
-      new RegExp(
-        `(${escapedWords.join("|")})`,
-        "gi"
-      );
+    // IMPORTANT FIX
+    //
+    // We use \b so that a replacement such as
+    // "is" cannot match inside the word "this".
+    //
+    // OLD:
+    // is
+    //
+    // could incorrectly produce:
+    // th + is
+    //
+    // NEW:
+    // \b(is)\b
+    //
+    // matches only the complete word "is".
+    const regex = new RegExp(
+      `\\b(${escapedWords.join("|")})\\b`,
+      "gi"
+    );
 
     const parts =
-      simplifiedText.split(
-        regex
-      );
+      simplifiedText.split(regex);
 
     return parts.map(
       (part, index) => {
@@ -667,7 +705,6 @@ function Simplify() {
 
           </div>
 
-
           {/* READING LEVEL */}
 
           <div className="w-full lg:w-48">
@@ -716,7 +753,6 @@ function Simplify() {
 
         </div>
 
-
         {/* =================================================
             UPLOAD
         ================================================= */}
@@ -751,7 +787,6 @@ function Simplify() {
 
             </div>
 
-
             <label
               htmlFor="document-upload"
               className="cursor-pointer bg-slate-800 border border-slate-700 px-5 py-3 rounded-xl font-semibold hover:border-cyan-400 hover:text-cyan-400 transition text-center"
@@ -772,7 +807,6 @@ function Simplify() {
           </div>
 
         </div>
-
 
         {/* =================================================
             TEXT EDITORS
@@ -802,7 +836,6 @@ function Simplify() {
 
             </div>
 
-
             <div className="relative bg-slate-900 border border-slate-700 rounded-2xl min-h-[360px]">
 
               <div className="absolute top-4 right-4 z-10">
@@ -821,10 +854,10 @@ function Simplify() {
 
               </div>
 
-
               <div
                 className="absolute inset-0 p-5 pr-16 overflow-y-auto text-[15px] leading-7 whitespace-pre-wrap"
               >
+
                 {text ? (
                   highlightOriginalText()
                 ) : (
@@ -832,8 +865,8 @@ function Simplify() {
                     Enter your text here...
                   </span>
                 )}
-              </div>
 
+              </div>
 
               <textarea
                 value={text}
@@ -854,7 +887,6 @@ function Simplify() {
             </p>
 
           </div>
-
 
           {/* SIMPLIFIED */}
 
@@ -878,7 +910,6 @@ function Simplify() {
 
             </div>
 
-
             <div className="relative bg-slate-900 border border-slate-700 rounded-2xl min-h-[360px]">
 
               <div className="absolute top-4 right-4 z-10">
@@ -900,7 +931,6 @@ function Simplify() {
                 </button>
 
               </div>
-
 
               <div className="p-5 pr-16 text-[15px] leading-7 whitespace-pre-wrap min-h-[360px] overflow-y-auto">
 
@@ -924,7 +954,6 @@ function Simplify() {
 
         </div>
 
-
         {/* =================================================
             ACTION BUTTONS
         ================================================= */}
@@ -941,7 +970,6 @@ function Simplify() {
               : "✨ Simplify Text"}
           </button>
 
-
           <button
             onClick={handleClear}
             className="sm:w-32 border border-slate-700 text-white py-3.5 rounded-xl hover:bg-slate-900 transition"
@@ -950,7 +978,6 @@ function Simplify() {
           </button>
 
         </div>
-
 
         {/* =================================================
             ERROR
@@ -961,7 +988,6 @@ function Simplify() {
             {error}
           </div>
         )}
-
 
         {/* =================================================
             ANALYSIS / SCORES
@@ -993,7 +1019,6 @@ function Simplify() {
 
             </div>
 
-
             <div className="grid grid-cols-2 gap-3 mt-5">
 
               <div className="bg-slate-950/70 rounded-xl p-4">
@@ -1013,7 +1038,6 @@ function Simplify() {
                 </p>
 
               </div>
-
 
               <div className="bg-cyan-400/[0.05] border border-cyan-400/10 rounded-xl p-4">
 
@@ -1036,7 +1060,6 @@ function Simplify() {
             </div>
 
           </div>
-
 
           {/* IMPROVEMENT */}
 
@@ -1062,7 +1085,6 @@ function Simplify() {
 
             </div>
 
-
             <div className="grid grid-cols-2 gap-3 mt-5">
 
               <div className="bg-slate-950/70 rounded-xl p-4">
@@ -1076,7 +1098,6 @@ function Simplify() {
                 </p>
 
               </div>
-
 
               <div className="bg-slate-950/70 rounded-xl p-4">
 
@@ -1105,7 +1126,6 @@ function Simplify() {
 
         </div>
 
-
         {/* =================================================
             EXTRA METRICS
         ================================================= */}
@@ -1133,7 +1153,6 @@ function Simplify() {
             </span>
 
           </div>
-
 
           {/* GRAMMAR */}
 
@@ -1167,7 +1186,6 @@ function Simplify() {
 
         </div>
 
-
         {/* =================================================
             DIFFICULT WORDS
         ================================================= */}
@@ -1194,7 +1212,6 @@ function Simplify() {
               </span>
 
             </div>
-
 
             <div className="grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
 
@@ -1227,7 +1244,6 @@ function Simplify() {
           </div>
         )}
 
-
         {/* =================================================
             BOTTOM NAVIGATION
         ================================================= */}
@@ -1242,7 +1258,6 @@ function Simplify() {
           >
             ← Back to Dashboard
           </button>
-
 
           <button
             onClick={() =>
