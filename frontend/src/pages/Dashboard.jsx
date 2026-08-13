@@ -241,14 +241,20 @@ function Dashboard() {
 
           {/* Logo */}
 
-          <button
-            onClick={() =>
-              navigate("/dashboard")
-            }
-            className="text-2xl sm:text-3xl font-bold text-cyan-400 hover:text-cyan-300 transition w-fit"
-          >
-            ReadEase AI
-          </button>
+<button
+  onClick={() => navigate("/dashboard")}
+  className="flex items-center gap-3 hover:opacity-90 transition"
+>
+  <img
+    src="/logo.png"
+    alt="ReadEase AI Logo"
+    className="w-15 h-15 sm:w-16 sm:h-16 object-contain"
+  />
+
+  <span className="text-2xl sm:text-3xl font-bold text-cyan-400">
+    ReadEase AI
+  </span>
+</button>
 
 
           {/* Navigation */}
