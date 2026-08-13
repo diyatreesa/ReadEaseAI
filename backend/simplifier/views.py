@@ -5,8 +5,8 @@ import json
 import re
 import io
 
-
 from django.core.mail import send_mail
+
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 from rest_framework import status
@@ -15,6 +15,7 @@ from .otp import generate_otp, store_otp, verify_otp
 
 from docx import Document
 from pypdf import PdfReader
+
 from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import A4
 
@@ -27,12 +28,29 @@ from .grammar import grammar_score
 # =========================================================
 
 def calculate_readability(text):
+    """
+    Calculate:
+
+    - Flesch Reading Ease
+    - Flesch-Kincaid Grade Level
+
+    Higher Reading Ease = easier to read.
+    Lower Grade Level = easier to read.
+    """
 
     if not isinstance(text, str):
         text = str(text)
 
+    text = text.strip()
+
+    if not text:
+        return {
+            "reading_ease": 0,
+            "grade_level": 0
+        }
+
     # -----------------------------------------------------
-    # Find sentences
+    # Sentence detection
     # -----------------------------------------------------
 
     sentences = re.split(
@@ -47,11 +65,11 @@ def calculate_readability(text):
     ]
 
     # -----------------------------------------------------
-    # Find words
+    # Word detection
     # -----------------------------------------------------
 
     words = re.findall(
-        r"\b[a-zA-Z]+\b",
+        r"\b[a-zA-Z]+(?:'[a-zA-Z]+)?\b",
         text
     )
 
@@ -69,31 +87,58 @@ def calculate_readability(text):
     word_count = len(words)
 
     # -----------------------------------------------------
-    # Syllable Counter
+    # Syllable counter
     # -----------------------------------------------------
 
     def count_syllables(word):
 
         word = word.lower()
 
+        word = re.sub(
+            r"[^a-z]",
+            "",
+            word
+        )
+
+        if not word:
+            return 1
+
         vowels = "aeiouy"
 
         syllables = 0
-        previous_was_vowel = False
+        previous_vowel = False
 
         for character in word:
 
-            is_vowel = character in vowels
+            current_vowel = (
+                character in vowels
+            )
 
-            if is_vowel and not previous_was_vowel:
+            if current_vowel and not previous_vowel:
                 syllables += 1
 
-            previous_was_vowel = is_vowel
+            previous_vowel = current_vowel
 
-        # Handle silent "e"
-
-        if word.endswith("e") and syllables > 1:
+        # Silent e
+        if (
+            word.endswith("e")
+            and not word.endswith("le")
+            and syllables > 1
+        ):
             syllables -= 1
+
+        # Words ending in -ed
+        if (
+            word.endswith("ed")
+            and len(word) > 3
+            and syllables > 1
+        ):
+
+            if (
+                len(word) >= 3
+                and word[-3] not in vowels
+            ):
+                syllables -= 1
 
         return max(
             syllables,
@@ -101,7 +146,7 @@ def calculate_readability(text):
         )
 
     # -----------------------------------------------------
-    # Count total syllables
+    # Total syllables
     # -----------------------------------------------------
 
     total_syllables = sum(
@@ -131,8 +176,13 @@ def calculate_readability(text):
         - (84.6 * syllables_per_word)
     )
 
+    reading_ease = max(
+        min(reading_ease, 100),
+        -100
+    )
+
     # -----------------------------------------------------
-    # Flesch-Kincaid Grade Level
+    # Flesch-Kincaid Grade
     # -----------------------------------------------------
 
     grade_level = (
@@ -141,17 +191,322 @@ def calculate_readability(text):
         - 15.59
     )
 
+    grade_level = max(
+        round(grade_level, 1),
+        0
+    )
+
     return {
         "reading_ease": round(
             reading_ease,
             2
         ),
 
-        "grade_level": max(
-            round(grade_level, 1),
-            0
-        )
+        "grade_level": grade_level
     }
+
+
+# =========================================================
+# NORMALIZE DIFFICULT WORDS
+# =========================================================
+
+def normalize_difficult_words(words):
+    """
+    Normalize difficult-word results while PRESERVING:
+
+    - word
+    - meaning
+    - replacement
+
+    Supported input:
+
+    [
+        "ubiquitous"
+    ]
+
+    OR:
+
+    [
+        {
+            "word": "ubiquitous",
+            "meaning": "Found everywhere; very common.",
+            "replacement": "common"
+        }
+    ]
+
+    The frontend receives objects so it can display the meaning.
+    """
+
+    if not isinstance(words, list):
+        return []
+
+    cleaned = []
+    seen = set()
+
+    for item in words:
+
+        if isinstance(item, dict):
+            word = str(item.get("word", "")).strip()
+            meaning = str(
+                item.get("meaning", "Meaning not available.")
+            ).strip()
+            replacement = str(
+                item.get("replacement", "")
+            ).strip()
+
+        else:
+            word = str(item).strip()
+            meaning = "Meaning not available."
+            replacement = ""
+
+        if not word:
+            continue
+
+        key = word.lower()
+
+        if key in seen:
+            continue
+
+        seen.add(key)
+
+        if not meaning:
+            meaning = "Meaning not available."
+
+        cleaned.append(
+            {
+                "word": word,
+                "meaning": meaning,
+                "replacement": replacement,
+            }
+        )
+
+    return cleaned
+
+
+# =========================================================
+# CLEAN AI WORD MAPPINGS
+# =========================================================
+
+def clean_word_mappings(
+    mappings,
+    original_text,
+    simplified_text
+):
+    """
+    Clean and validate vocabulary replacement mappings.
+
+    Expected format:
+
+    [
+        {
+            "word": "rapid",
+            "replacement": "fast"
+        }
+    ]
+    """
+
+    if not isinstance(
+        mappings,
+        list
+    ):
+        return []
+
+    cleaned = []
+
+    original_lower = (
+        original_text.lower()
+    )
+
+    simplified_lower = (
+        simplified_text.lower()
+    )
+
+    for item in mappings:
+
+        if not isinstance(
+            item,
+            dict
+        ):
+            continue
+
+        word = item.get(
+            "word",
+            ""
+        )
+
+        replacement = item.get(
+            "replacement",
+            ""
+        )
+
+        if (
+            word is None
+            or replacement is None
+        ):
+            continue
+
+        word = str(
+            word
+        ).strip()
+
+        replacement = str(
+            replacement
+        ).strip()
+
+        if (
+            not word
+            or not replacement
+        ):
+            continue
+
+        # -------------------------------------------------
+        # Ignore identical replacements
+        # -------------------------------------------------
+
+        if (
+            word.lower()
+            == replacement.lower()
+        ):
+            continue
+
+        # -------------------------------------------------
+        # Make sure original term exists
+        # -------------------------------------------------
+
+        if (
+            word.lower()
+            not in original_lower
+        ):
+            continue
+
+        # -------------------------------------------------
+        # Make sure replacement exists
+        # -------------------------------------------------
+
+        if (
+            replacement.lower()
+            not in simplified_lower
+        ):
+            continue
+
+        cleaned.append(
+            {
+                "word": word,
+                "replacement": replacement
+            }
+        )
+
+    # -----------------------------------------------------
+    # Remove duplicates
+    # -----------------------------------------------------
+
+    unique = []
+
+    seen = set()
+
+    for item in cleaned:
+
+        key = (
+            item["word"].lower(),
+            item["replacement"].lower()
+        )
+
+        if key in seen:
+            continue
+
+        seen.add(key)
+
+        unique.append(
+            item
+        )
+
+    return unique
+
+
+# =========================================================
+# EXTRACT UPLOADED FILE
+# =========================================================
+
+def extract_uploaded_file(uploaded_file):
+    """
+    Extract text from PDF, DOCX, or TXT uploads.
+
+    Used directly by /api/simplify/ when the frontend sends
+    a file in the same multipart/form-data request.
+    """
+
+    if not uploaded_file:
+        return ""
+
+    filename = uploaded_file.name.lower().strip()
+
+    # -----------------------------------------------------
+    # TXT
+    # -----------------------------------------------------
+
+    if filename.endswith(".txt"):
+
+        try:
+            return uploaded_file.read().decode("utf-8")
+
+        except UnicodeDecodeError:
+
+            uploaded_file.seek(0)
+
+            return uploaded_file.read().decode("latin-1")
+
+    # -----------------------------------------------------
+    # DOCX
+    # -----------------------------------------------------
+
+    if filename.endswith(".docx"):
+
+        document = Document(uploaded_file)
+
+        paragraphs = []
+
+        for paragraph in document.paragraphs:
+
+            paragraph_text = paragraph.text.strip()
+
+            if paragraph_text:
+                paragraphs.append(paragraph_text)
+
+        return "\n".join(paragraphs)
+
+    # -----------------------------------------------------
+    # PDF
+    # -----------------------------------------------------
+
+    if filename.endswith(".pdf"):
+
+        reader = PdfReader(uploaded_file)
+
+        pages = []
+
+        for page in reader.pages:
+
+            try:
+                page_text = page.extract_text() or ""
+
+            except Exception as page_error:
+
+                print(
+                    "PDF page extraction error:",
+                    page_error
+                )
+
+                page_text = ""
+
+            if page_text.strip():
+                pages.append(page_text)
+
+        return "\n".join(pages)
+
+    raise ValueError(
+        "Unsupported file type. "
+        "Please upload a PDF, DOCX, or TXT file."
+    )
 
 
 # =========================================================
@@ -162,7 +517,7 @@ def calculate_readability(text):
 def simplify_text(request):
 
     # -----------------------------------------------------
-    # Only allow POST
+    # POST only
     # -----------------------------------------------------
 
     if request.method != "POST":
@@ -178,22 +533,27 @@ def simplify_text(request):
     try:
 
         # =================================================
-        # READ REQUEST DATA
-        # Supports JSON + FormData
+        # READ REQUEST
         # =================================================
 
-        content_type = request.content_type or ""
+        content_type = (
+            request.content_type or ""
+        )
 
         # -------------------------------------------------
-        # JSON request
+        # JSON REQUEST
         # -------------------------------------------------
 
-        if "application/json" in content_type:
+        if (
+            "application/json"
+            in content_type
+        ):
 
             try:
 
-                body = request.body.decode(
-                    "utf-8"
+                body = (
+                    request.body
+                    .decode("utf-8")
                 )
 
                 if not body.strip():
@@ -206,7 +566,9 @@ def simplify_text(request):
                         status=400
                     )
 
-                data = json.loads(body)
+                data = json.loads(
+                    body
+                )
 
             except (
                 json.JSONDecodeError,
@@ -228,13 +590,15 @@ def simplify_text(request):
                 )
             ).strip()
 
-            level = data.get(
-                "level",
-                "Beginner"
-            )
+            level = str(
+                data.get(
+                    "level",
+                    "Beginner"
+                )
+            ).strip()
 
         # -------------------------------------------------
-        # FormData / multipart/form-data
+        # FORM DATA
         # -------------------------------------------------
 
         else:
@@ -247,63 +611,115 @@ def simplify_text(request):
             level = request.POST.get(
                 "level",
                 "Beginner"
-            )
+            ).strip()
 
-        # -------------------------------------------------
-        # Validate reading level
-        # -------------------------------------------------
+        # =================================================
+        # NORMALIZE LEVEL
+        # =================================================
 
-        allowed_levels = {
-            "Beginner",
-            "Intermediate",
-            "Advanced"
+        level_map = {
+            "beginner": "Beginner",
+            "intermediate": "Intermediate",
+            "advanced": "Advanced"
         }
 
-        if level not in allowed_levels:
+        level = level_map.get(
+            level.lower(),
+            "Beginner"
+        )
 
-            level = "Beginner"
+        # =================================================
+        # EXTRACT UPLOADED FILE WHEN TEXT IS EMPTY
+        # =================================================
+        #
+        # The React frontend sends both "text" and "file".
+        # For PDF/DOCX uploads, the text field can be empty,
+        # so the backend must extract the document here.
+        # =================================================
 
-        # -------------------------------------------------
-        # Validate text
-        # -------------------------------------------------
+        if request.FILES.get("file"):
+
+            uploaded_file = request.FILES.get("file")
+
+            text = extract_uploaded_file(
+                uploaded_file
+            ).strip()
+
+            text = re.sub(
+                r"\n{3,}",
+                "\n\n",
+                text
+            )
+
+        # =================================================
+        # VALIDATE TEXT
+        # =================================================
 
         if not text:
 
             return JsonResponse(
                 {
                     "error":
-                        "Text is required."
+                        "Please enter some text to simplify."
                 },
                 status=400
             )
 
         # -------------------------------------------------
-        # DEBUG
+        # Maximum input size
         # -------------------------------------------------
 
-        print(
-            "Received text:"
-        )
+        if len(text) > 50000:
 
-        print(text)
-
-        print(
-            "Reading level:"
-        )
-
-        print(level)
+            return JsonResponse(
+                {
+                    "error":
+                        "The text is too long. "
+                        "Please use a shorter document."
+                },
+                status=400
+            )
 
         # =================================================
-        # BEFORE SIMPLIFICATION
+        # DEBUG
         # =================================================
 
-        before_readability = calculate_readability(
-            text
+        print(
+            "\n"
+            + "=" * 60
         )
 
         print(
-            "Before readability:",
-            before_readability
+            "READ EASE SIMPLIFICATION REQUEST"
+        )
+
+        print(
+            "Reading level:",
+            level
+        )
+
+        print(
+            "Characters:",
+            len(text)
+        )
+
+        print(
+            "Words:",
+            len(text.split())
+        )
+
+        print(
+            "=" * 60
+        )
+
+        # =================================================
+        # BEFORE READABILITY
+        # =================================================
+
+        before_readability = (
+            calculate_readability(
+                text
+            )
         )
 
         # =================================================
@@ -314,6 +730,18 @@ def simplify_text(request):
 
             grammar_result = grammar_score(
                 text
+            )
+
+            grammar_result = float(
+                grammar_result
+            )
+
+            grammar_result = max(
+                min(
+                    grammar_result,
+                    100
+                ),
+                0
             )
 
         except Exception as grammar_error:
@@ -329,31 +757,51 @@ def simplify_text(request):
         # AI SIMPLIFICATION
         # =================================================
 
-        simplified_result = simplify_pipeline(
-            text,
-            level
+        print(
+            "Sending text to simplification pipeline..."
+        )
+
+        simplified_result = (
+            simplify_pipeline(
+                text,
+                level
+            )
         )
 
         print(
-            "Pipeline result:",
+            "Pipeline returned:"
+        )
+
+        print(
             simplified_result
         )
 
         # =================================================
-        # HANDLE PIPELINE RESULT
+        # EXTRACT PIPELINE RESULT
         # =================================================
+
+        simplified = ""
+
+        difficult_words = []
+
+        changes = []
+
+        # -------------------------------------------------
+        # DICTIONARY RESPONSE
+        # -------------------------------------------------
 
         if isinstance(
             simplified_result,
             dict
         ):
 
-            simplified = simplified_result.get(
-                "simplified_text",
-                ""
+            simplified = (
+                simplified_result.get(
+                    "simplified_text",
+                    ""
+                )
             )
 
-            # Get difficult words and replacements
             difficult_words = (
                 simplified_result.get(
                     "difficult_words",
@@ -361,36 +809,86 @@ def simplify_text(request):
                 )
             )
 
-        else:
-
-            simplified = simplified_result
-
-            difficult_words = []
-
-        # =================================================
-        # MAKE SURE SIMPLIFIED TEXT IS A STRING
-        # =================================================
-
-        if not isinstance(
-            simplified,
-            str
-        ):
-
-            simplified = str(
-                simplified
+            changes = (
+                simplified_result.get(
+                    "changes",
+                    []
+                )
             )
 
-        simplified = simplified.strip()
+            # -------------------------------------------------
+            # BACKWARD COMPATIBILITY
+            #
+            # If old pipeline does not have "changes",
+            # difficult_words may contain mapping dictionaries.
+            # Extract those mappings.
+            # -------------------------------------------------
 
-        print(
-            "Final simplified text:"
-        )
+            if not changes:
 
-        print(simplified)
+                possible_changes = []
+
+                if isinstance(
+                    difficult_words,
+                    list
+                ):
+
+                    for item in difficult_words:
+
+                        if not isinstance(
+                            item,
+                            dict
+                        ):
+                            continue
+
+                        word = item.get(
+                            "word",
+                            ""
+                        )
+
+                        replacement = item.get(
+                            "replacement",
+                            ""
+                        )
+
+                        if (
+                            word
+                            and replacement
+                        ):
+
+                            possible_changes.append(
+                                {
+                                    "word":
+                                        word,
+
+                                    "replacement":
+                                        replacement
+                                }
+                            )
+
+                changes = possible_changes
+
+        # -------------------------------------------------
+        # STRING RESPONSE
+        # -------------------------------------------------
+
+        else:
+
+            simplified = (
+                simplified_result
+            )
 
         # =================================================
-        # SAFETY CHECK
+        # VALIDATE SIMPLIFIED TEXT
         # =================================================
+
+        if simplified is None:
+
+            simplified = ""
+
+        simplified = str(
+            simplified
+        ).strip()
 
         if not simplified:
 
@@ -403,108 +901,97 @@ def simplify_text(request):
             )
 
         # =================================================
-        # CLEAN DIFFICULT WORD MAPPINGS
+        # CLEAN AI TEXT
         # =================================================
 
-        if not isinstance(
-            difficult_words,
-            list
-        ):
+        # Remove accidental Markdown code fences.
 
-            difficult_words = []
-
-        clean_difficult_words = []
-
-        for item in difficult_words:
-
-            if not isinstance(
-                item,
-                dict
-            ):
-                continue
-
-            word = item.get(
-                "word",
-                ""
-            )
-
-            replacement = item.get(
-                "replacement",
-                ""
-            )
-
-            if word is None:
-                continue
-
-            if replacement is None:
-                continue
-
-            word = str(
-                word
-            ).strip()
-
-            replacement = str(
-                replacement
-            ).strip()
-
-            # Only keep mappings where BOTH
-            # original word and replacement exist.
-
-            if not word:
-                continue
-
-            if not replacement:
-                continue
-
-            clean_difficult_words.append(
-                {
-                    "word": word,
-                    "replacement": replacement
-                }
-            )
-
-        difficult_words = clean_difficult_words
-
-        # =================================================
-        # DEBUG
-        # =================================================
-
-        print(
-            "FINAL DIFFICULT WORD MAPPINGS:"
+        simplified = re.sub(
+            r"^```(?:text|json)?\s*",
+            "",
+            simplified,
+            flags=re.IGNORECASE
         )
 
-        print(
+        simplified = re.sub(
+            r"\s*```$",
+            "",
+            simplified
+        )
+
+        simplified = simplified.strip()
+
+        # =================================================
+        # CLEAN DIFFICULT WORDS
+        # =================================================
+
+        difficult_words = normalize_difficult_words(
             difficult_words
         )
 
         # =================================================
-        # AFTER SIMPLIFICATION
+        # CLEAN ACTUAL CHANGES
         # =================================================
 
-        after_readability = calculate_readability(
+        changes = clean_word_mappings(
+            changes,
+            text,
             simplified
         )
 
-        print(
-            "After readability:",
-            after_readability
-        )
+        # =================================================
+        # KEEP ONLY REAL REPLACEMENTS
+        # =================================================
+        #
+        # A difficult word can remain unchanged. In that case
+        # it belongs in the vocabulary list but NOT in changes.
+        # =================================================
+
+        changes_lookup = {
+            (
+                item["word"].lower(),
+                item["replacement"].lower()
+            )
+            for item in changes
+        }
+
+        for item in difficult_words:
+
+            word = item.get("word", "")
+            replacement = item.get("replacement", "")
+
+            if not replacement:
+                continue
+
+            if (
+                word.lower(),
+                replacement.lower()
+            ) not in changes_lookup:
+
+                item["replacement"] = ""
+
+        # Add the validated replacement to the matching
+        # vocabulary item.
+        for change in changes:
+
+            change_word = change["word"].lower()
+
+            for item in difficult_words:
+
+                if item["word"].lower() == change_word:
+
+                    item["replacement"] = change["replacement"]
+
+                    break
 
         # =================================================
-        # READING TIME
+        # AFTER READABILITY
         # =================================================
 
-        word_count = len(
-            text.split()
-        )
-
-        # Approximately 200 words per minute
-
-        reading_time = max(
-            round(
-                word_count / 200
-            ),
-            1
+        after_readability = (
+            calculate_readability(
+                simplified
+            )
         )
 
         # =================================================
@@ -523,7 +1010,7 @@ def simplify_text(request):
         )
 
         # =================================================
-        # GRADE LEVEL CHANGE
+        # GRADE CHANGE
         # =================================================
 
         grade_change = round(
@@ -538,13 +1025,78 @@ def simplify_text(request):
         )
 
         # =================================================
-        # RESPONSE
+        # WORD COUNTS
+        # =================================================
+
+        original_word_count = len(
+            re.findall(
+                r"\b[a-zA-Z]+(?:'[a-zA-Z]+)?\b",
+                text
+            )
+        )
+
+        simplified_word_count = len(
+            re.findall(
+                r"\b[a-zA-Z]+(?:'[a-zA-Z]+)?\b",
+                simplified
+            )
+        )
+
+        # =================================================
+        # READING TIME
+        # =================================================
+
+        # Approximate reading speed:
+        # 200 words per minute.
+
+        original_reading_time = max(
+            round(
+                original_word_count / 200
+            ),
+            1
+        )
+
+        simplified_reading_time = max(
+            round(
+                simplified_word_count / 200
+            ),
+            1
+        )
+
+        # =================================================
+        # SENTENCE COUNTS
+        # =================================================
+
+        original_sentence_count = len(
+            [
+                sentence
+                for sentence in re.split(
+                    r"[.!?]+",
+                    text
+                )
+                if sentence.strip()
+            ]
+        )
+
+        simplified_sentence_count = len(
+            [
+                sentence
+                for sentence in re.split(
+                    r"[.!?]+",
+                    simplified
+                )
+                if sentence.strip()
+            ]
+        )
+
+        # =================================================
+        # RESPONSE DATA
         # =================================================
 
         response_data = {
 
             # -------------------------------------------------
-            # Text
+            # TEXT
             # -------------------------------------------------
 
             "original_text":
@@ -557,11 +1109,16 @@ def simplify_text(request):
                 level,
 
             # -------------------------------------------------
-            # BEFORE
+            # READABILITY
             # -------------------------------------------------
 
             "before_readability":
                 before_readability[
+                    "reading_ease"
+                ],
+
+            "after_readability":
+                after_readability[
                     "reading_ease"
                 ],
 
@@ -570,23 +1127,10 @@ def simplify_text(request):
                     "grade_level"
                 ],
 
-            # -------------------------------------------------
-            # AFTER
-            # -------------------------------------------------
-
-            "after_readability":
-                after_readability[
-                    "reading_ease"
-                ],
-
             "after_grade":
                 after_readability[
                     "grade_level"
                 ],
-
-            # -------------------------------------------------
-            # IMPROVEMENT
-            # -------------------------------------------------
 
             "readability_improvement":
                 readability_improvement,
@@ -595,51 +1139,97 @@ def simplify_text(request):
                 grade_change,
 
             # -------------------------------------------------
-            # OTHER STATISTICS
+            # GRAMMAR
+            # -------------------------------------------------
+
+            "grammar_score":
+                f"{round(grammar_result)}%",
+
+            # -------------------------------------------------
+            # READING TIME
             # -------------------------------------------------
 
             "reading_time":
-                f"{reading_time} min",
+                f"{original_reading_time} min",
 
-            "grammar_score":
-                f"{grammar_result}%",
+            "original_reading_time":
+                f"{original_reading_time} min",
+
+            "simplified_reading_time":
+                f"{simplified_reading_time} min",
+
+            # -------------------------------------------------
+            # WORD / SENTENCE STATISTICS
+            # -------------------------------------------------
+
+            "original_word_count":
+                original_word_count,
+
+            "simplified_word_count":
+                simplified_word_count,
+
+            "original_sentence_count":
+                original_sentence_count,
+
+            "simplified_sentence_count":
+                simplified_sentence_count,
 
             # -------------------------------------------------
             # DIFFICULT WORDS
+            #
+            # Used by frontend for yellow highlighting.
             # -------------------------------------------------
 
             "difficult_words":
-                difficult_words
+                difficult_words,
+
+            # -------------------------------------------------
+            # ACTUAL CHANGES
+            #
+            # Used by frontend for cyan highlighting.
+            # -------------------------------------------------
+
+            "changes":
+                changes
         }
 
         # =================================================
-        # DEBUG
+        # DEBUG RESPONSE
         # =================================================
 
         print(
-            "FINAL API RESPONSE:"
+            "\nFINAL SIMPLIFICATION RESPONSE:"
         )
 
         print(
             json.dumps(
                 response_data,
-                indent=2
+                indent=2,
+                ensure_ascii=False
             )
         )
 
+        print(
+            "=" * 60
+        )
+
         # =================================================
-        # RETURN RESPONSE
+        # RETURN
         # =================================================
 
         return JsonResponse(
-            response_data
+            response_data,
+            status=200
         )
 
     except Exception as error:
 
         print(
-            "Simplification error:",
-            error
+            "\nSIMPLIFICATION ERROR:"
+        )
+
+        print(
+            repr(error)
         )
 
         return JsonResponse(
@@ -661,10 +1251,6 @@ def simplify_text(request):
 @csrf_exempt
 def upload_file(request):
 
-    # -----------------------------------------------------
-    # Only allow POST
-    # -----------------------------------------------------
-
     if request.method != "POST":
 
         return JsonResponse(
@@ -677,12 +1263,10 @@ def upload_file(request):
 
     try:
 
-        # -------------------------------------------------
-        # Get uploaded file
-        # -------------------------------------------------
-
-        uploaded_file = request.FILES.get(
-            "file"
+        uploaded_file = (
+            request.FILES.get(
+                "file"
+            )
         )
 
         if not uploaded_file:
@@ -695,7 +1279,11 @@ def upload_file(request):
                 status=400
             )
 
-        filename = uploaded_file.name.lower()
+        filename = (
+            uploaded_file.name
+            .lower()
+            .strip()
+        )
 
         print(
             "Uploaded file:",
@@ -706,27 +1294,35 @@ def upload_file(request):
         # TXT
         # =================================================
 
-        if filename.endswith(".txt"):
+        if filename.endswith(
+            ".txt"
+        ):
 
             try:
 
-                text = uploaded_file.read().decode(
-                    "utf-8"
+                text = (
+                    uploaded_file
+                    .read()
+                    .decode("utf-8")
                 )
 
             except UnicodeDecodeError:
 
                 uploaded_file.seek(0)
 
-                text = uploaded_file.read().decode(
-                    "latin-1"
+                text = (
+                    uploaded_file
+                    .read()
+                    .decode("latin-1")
                 )
 
         # =================================================
         # DOCX
         # =================================================
 
-        elif filename.endswith(".docx"):
+        elif filename.endswith(
+            ".docx"
+        ):
 
             document = Document(
                 uploaded_file
@@ -734,12 +1330,18 @@ def upload_file(request):
 
             paragraphs = []
 
-            for paragraph in document.paragraphs:
+            for paragraph in (
+                document.paragraphs
+            ):
 
-                if paragraph.text.strip():
+                paragraph_text = (
+                    paragraph.text.strip()
+                )
+
+                if paragraph_text:
 
                     paragraphs.append(
-                        paragraph.text
+                        paragraph_text
                     )
 
             text = "\n".join(
@@ -750,7 +1352,9 @@ def upload_file(request):
         # PDF
         # =================================================
 
-        elif filename.endswith(".pdf"):
+        elif filename.endswith(
+            ".pdf"
+        ):
 
             reader = PdfReader(
                 uploaded_file
@@ -760,7 +1364,20 @@ def upload_file(request):
 
             for page in reader.pages:
 
-                page_text = page.extract_text()
+                try:
+
+                    page_text = (
+                        page.extract_text()
+                    )
+
+                except Exception as page_error:
+
+                    print(
+                        "PDF page extraction error:",
+                        page_error
+                    )
+
+                    page_text = ""
 
                 if page_text:
 
@@ -773,7 +1390,7 @@ def upload_file(request):
             )
 
         # =================================================
-        # UNSUPPORTED FILE
+        # UNSUPPORTED
         # =================================================
 
         else:
@@ -787,9 +1404,9 @@ def upload_file(request):
                 status=400
             )
 
-        # -------------------------------------------------
-        # Clean extracted text
-        # -------------------------------------------------
+        # =================================================
+        # CLEAN TEXT
+        # =================================================
 
         text = text.strip()
 
@@ -803,19 +1420,18 @@ def upload_file(request):
                 status=400
             )
 
-        # -------------------------------------------------
-        # Debug
-        # -------------------------------------------------
+        # Normalize excessive blank lines.
 
-        print(
-            "Extracted text:"
+        text = re.sub(
+            r"\n{3,}",
+            "\n\n",
+            text
         )
 
-        print(text)
-
-        # -------------------------------------------------
-        # Return extracted text
-        # -------------------------------------------------
+        print(
+            "Extracted characters:",
+            len(text)
+        )
 
         return JsonResponse(
             {
@@ -824,14 +1440,15 @@ def upload_file(request):
 
                 "text":
                     text
-            }
+            },
+            status=200
         )
 
     except Exception as error:
 
         print(
             "File upload error:",
-            error
+            repr(error)
         )
 
         return JsonResponse(
@@ -853,10 +1470,6 @@ def upload_file(request):
 @csrf_exempt
 def download_simplified_text(request):
 
-    # -----------------------------------------------------
-    # Only allow POST
-    # -----------------------------------------------------
-
     if request.method != "POST":
 
         return JsonResponse(
@@ -869,18 +1482,24 @@ def download_simplified_text(request):
 
     try:
 
-        # -------------------------------------------------
-        # Read request
-        # -------------------------------------------------
+        content_type = (
+            request.content_type or ""
+        )
 
-        content_type = request.content_type or ""
+        # =================================================
+        # JSON
+        # =================================================
 
-        if "application/json" in content_type:
+        if (
+            "application/json"
+            in content_type
+        ):
 
             try:
 
-                body = request.body.decode(
-                    "utf-8"
+                body = (
+                    request.body
+                    .decode("utf-8")
                 )
 
                 if not body.strip():
@@ -893,7 +1512,9 @@ def download_simplified_text(request):
                         status=400
                     )
 
-                data = json.loads(body)
+                data = json.loads(
+                    body
+                )
 
             except (
                 json.JSONDecodeError,
@@ -920,7 +1541,11 @@ def download_simplified_text(request):
                     "format",
                     "txt"
                 )
-            ).lower()
+            ).lower().strip()
+
+        # =================================================
+        # FORM DATA
+        # =================================================
 
         else:
 
@@ -932,11 +1557,11 @@ def download_simplified_text(request):
             file_format = request.POST.get(
                 "format",
                 "txt"
-            ).lower()
+            ).lower().strip()
 
-        # -------------------------------------------------
-        # Validate text
-        # -------------------------------------------------
+        # =================================================
+        # VALIDATE
+        # =================================================
 
         if not text:
 
@@ -956,7 +1581,9 @@ def download_simplified_text(request):
 
             response = HttpResponse(
                 text,
-                content_type="text/plain; charset=utf-8"
+                content_type=(
+                    "text/plain; charset=utf-8"
+                )
             )
 
             response[
@@ -972,12 +1599,12 @@ def download_simplified_text(request):
         # DOCX
         # =================================================
 
-        elif file_format == "docx":
+        if file_format == "docx":
 
             document = Document()
 
             document.add_heading(
-                "Simplified Text",
+                "ReadEase AI - Simplified Text",
                 level=1
             )
 
@@ -987,10 +1614,14 @@ def download_simplified_text(request):
 
             for paragraph in paragraphs:
 
-                if paragraph.strip():
+                paragraph = (
+                    paragraph.strip()
+                )
+
+                if paragraph:
 
                     document.add_paragraph(
-                        paragraph.strip()
+                        paragraph
                     )
 
             file_stream = io.BytesIO()
@@ -1022,7 +1653,7 @@ def download_simplified_text(request):
         # PDF
         # =================================================
 
-        elif file_format == "pdf":
+        if file_format == "pdf":
 
             file_stream = io.BytesIO()
 
@@ -1048,13 +1679,13 @@ def download_simplified_text(request):
             pdf.drawString(
                 x,
                 y,
-                "Simplified Text"
+                "ReadEase AI - Simplified Text"
             )
 
             y -= 35
 
             # -------------------------------------------------
-            # Text
+            # Body
             # -------------------------------------------------
 
             pdf.setFont(
@@ -1062,7 +1693,9 @@ def download_simplified_text(request):
                 11
             )
 
-            max_width = width - 100
+            max_width = (
+                width - 100
+            )
 
             paragraphs = text.split(
                 "\n"
@@ -1077,13 +1710,15 @@ def download_simplified_text(request):
                 for word in words:
 
                     test_line = (
-                        line + " " + word
+                        f"{line} {word}"
                     ).strip()
 
-                    line_width = pdf.stringWidth(
-                        test_line,
-                        "Helvetica",
-                        11
+                    line_width = (
+                        pdf.stringWidth(
+                            test_line,
+                            "Helvetica",
+                            11
+                        )
                     )
 
                     if line_width <= max_width:
@@ -1104,7 +1739,9 @@ def download_simplified_text(request):
 
                         line = word
 
-                    # New page
+                    # -----------------------------------------
+                    # Page break
+                    # -----------------------------------------
 
                     if y < 50:
 
@@ -1117,8 +1754,6 @@ def download_simplified_text(request):
 
                         y = height - 50
 
-                # Remaining line
-
                 if line:
 
                     pdf.drawString(
@@ -1129,11 +1764,7 @@ def download_simplified_text(request):
 
                     y -= 18
 
-                # Paragraph spacing
-
                 y -= 8
-
-                # New page if necessary
 
                 if y < 50:
 
@@ -1168,21 +1799,19 @@ def download_simplified_text(request):
         # INVALID FORMAT
         # =================================================
 
-        else:
-
-            return JsonResponse(
-                {
-                    "error":
-                        "Unsupported download format."
-                },
-                status=400
-            )
+        return JsonResponse(
+            {
+                "error":
+                    "Unsupported download format."
+            },
+            status=400
+        )
 
     except Exception as error:
 
         print(
             "Download error:",
-            error
+            repr(error)
         )
 
         return JsonResponse(
@@ -1195,274 +1824,72 @@ def download_simplified_text(request):
             },
             status=500
         )
-    
+
+
+# =========================================================
+# SEND VERIFICATION OTP
+# =========================================================
+
 @api_view(["POST"])
 def send_verification_otp(request):
 
-    email = request.data.get("email", "").strip().lower()
+    email = str(
+        request.data.get(
+            "email",
+            ""
+        )
+    ).strip().lower()
 
+    # =================================================
+    # VALIDATE EMAIL
+    # =================================================
 
-    # --------------------------------------------------
-    # Validate email
-    # --------------------------------------------------
+    email_pattern = (
+        r"^[a-zA-Z0-9._%+-]+@"
+        r"[a-zA-Z0-9-]+"
+        r"(\.[a-zA-Z0-9-]+)+$"
+    )
 
-    email_pattern = r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9-]+(\.[a-zA-Z0-9-]+)+$"
-
-    if not re.match(email_pattern, email):
+    if not re.match(
+        email_pattern,
+        email
+    ):
 
         return Response(
             {
                 "success": False,
-                "message": "Please enter a valid email address."
+
+                "message":
+                    "Please enter a valid email address."
             },
             status=status.HTTP_400_BAD_REQUEST
         )
 
-
-    # --------------------------------------------------
-    # Generate OTP
-    # --------------------------------------------------
+    # =================================================
+    # GENERATE OTP
+    # =================================================
 
     otp = generate_otp()
 
+    # =================================================
+    # STORE OTP
+    # =================================================
 
-    # --------------------------------------------------
-    # Store OTP
-    # --------------------------------------------------
-
-    store_otp(email, otp)
-
-
-    # --------------------------------------------------
-    # Send email
-    # --------------------------------------------------
-
-    try:
-
-        send_mail(
-            subject="ReadEase AI - Email Verification Code",
-
-            message=(
-                "Hello,\n\n"
-                "Your ReadEase AI verification code is:\n\n"
-                f"{otp}\n\n"
-                "This code will expire in 10 minutes.\n\n"
-                "If you did not request this code, "
-                "you can safely ignore this email.\n\n"
-                "Regards,\n"
-                "ReadEase AI Team"
-            ),
-
-            from_email=None,
-
-            recipient_list=[email],
-
-            fail_silently=False,
-        )
-
-
-        return Response(
-            {
-                "success": True,
-                "message": "Verification code sent successfully."
-            },
-            status=status.HTTP_200_OK
-        )
-
-
-    except Exception as error:
-
-        print("Email sending error:", error)
-
-        return Response(
-            {
-                "success": False,
-                "message": "Unable to send verification email."
-            },
-            status=status.HTTP_500_INTERNAL_SERVER_ERROR
-        )
-@api_view(["POST"])
-def send_verification_otp(request):
-
-    email = request.data.get("email", "").strip().lower()
-
-
-    # --------------------------------------------------
-    # Validate email
-    # --------------------------------------------------
-
-    email_pattern = r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9-]+(\.[a-zA-Z0-9-]+)+$"
-
-    if not re.match(email_pattern, email):
-
-        return Response(
-            {
-                "success": False,
-                "message": "Please enter a valid email address."
-            },
-            status=status.HTTP_400_BAD_REQUEST
-        )
-
-
-    # --------------------------------------------------
-    # Generate OTP
-    # --------------------------------------------------
-
-    otp = generate_otp()
-
-
-    # --------------------------------------------------
-    # Store OTP
-    # --------------------------------------------------
-
-    store_otp(email, otp)
-
-
-    # --------------------------------------------------
-    # Send email
-    # --------------------------------------------------
-
-    try:
-
-        send_mail(
-            subject="ReadEase AI - Email Verification Code",
-
-            message=(
-                "Hello,\n\n"
-                "Your ReadEase AI verification code is:\n\n"
-                f"{otp}\n\n"
-                "This code will expire in 10 minutes.\n\n"
-                "If you did not request this code, "
-                "you can safely ignore this email.\n\n"
-                "Regards,\n"
-                "ReadEase AI Team"
-            ),
-
-            from_email=None,
-
-            recipient_list=[email],
-
-            fail_silently=False,
-        )
-
-
-        return Response(
-            {
-                "success": True,
-                "message": "Verification code sent successfully."
-            },
-            status=status.HTTP_200_OK
-        )
-
-
-    except Exception as error:
-
-        print("Email sending error:", error)
-
-        return Response(
-            {
-                "success": False,
-                "message": "Unable to send verification email."
-            },
-            status=status.HTTP_500_INTERNAL_SERVER_ERROR
-        )
-    
-@api_view(["POST"])
-def verify_verification_otp(request):
-
-    email = request.data.get("email", "").strip().lower()
-    entered_otp = request.data.get("otp", "").strip()
-
-
-    # --------------------------------------------------
-    # Validate input
-    # --------------------------------------------------
-
-    if not email or not entered_otp:
-
-        return Response(
-            {
-                "success": False,
-                "message": "Email and verification code are required."
-            },
-            status=status.HTTP_400_BAD_REQUEST
-        )
-
-
-    # --------------------------------------------------
-    # Verify OTP
-    # --------------------------------------------------
-
-    verified, message = verify_otp(
+    store_otp(
         email,
-        entered_otp
+        otp
     )
 
-
-    if verified:
-
-        return Response(
-            {
-                "success": True,
-                "message": message
-            },
-            status=status.HTTP_200_OK
-        )
-
-
-    return Response(
-        {
-            "success": False,
-            "message": message
-        },
-        status=status.HTTP_400_BAD_REQUEST
-    )
-
-# ============================================================
-# EMAIL VERIFICATION OTP
-# ============================================================
-
-@api_view(["POST"])
-def send_verification_otp(request):
-
-    email = request.data.get("email", "").strip().lower()
-
-    # --------------------------------------------------------
-    # Validate email format
-    # --------------------------------------------------------
-
-    email_pattern = r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9-]+(\.[a-zA-Z0-9-]+)+$"
-
-    if not re.match(email_pattern, email):
-
-        return Response(
-            {
-                "success": False,
-                "message": "Please enter a valid email address."
-            },
-            status=status.HTTP_400_BAD_REQUEST
-        )
-
-    # --------------------------------------------------------
-    # Generate OTP
-    # --------------------------------------------------------
-
-    otp = generate_otp()
-
-    # --------------------------------------------------------
-    # Store OTP
-    # --------------------------------------------------------
-
-    store_otp(email, otp)
-
-    # --------------------------------------------------------
-    # Send OTP email
-    # --------------------------------------------------------
+    # =================================================
+    # SEND EMAIL
+    # =================================================
 
     try:
 
         send_mail(
-            subject="ReadEase AI - Email Verification Code",
+            subject=(
+                "ReadEase AI - Email Verification Code"
+            ),
 
             message=(
                 "Hello,\n\n"
@@ -1477,80 +1904,137 @@ def send_verification_otp(request):
 
             from_email=None,
 
-            recipient_list=[email],
+            recipient_list=[
+                email
+            ],
 
-            fail_silently=False,
+            fail_silently=False
         )
 
         return Response(
             {
                 "success": True,
-                "message": "Verification code sent successfully."
+
+                "message":
+                    "Verification code sent successfully."
             },
             status=status.HTTP_200_OK
         )
 
     except Exception as error:
 
-        print("Email sending error:", error)
+        print(
+            "Email sending error:",
+            repr(error)
+        )
 
         return Response(
             {
                 "success": False,
-                "message": "Unable to send verification email."
+
+                "message":
+                    "Unable to send verification email."
             },
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
 
 
-# ============================================================
+# =========================================================
 # VERIFY EMAIL OTP
-# ============================================================
+# =========================================================
 
 @api_view(["POST"])
 def verify_verification_otp(request):
 
-    email = request.data.get("email", "").strip().lower()
+    email = str(
+        request.data.get(
+            "email",
+            ""
+        )
+    ).strip().lower()
 
-    entered_otp = request.data.get("otp", "").strip()
+    entered_otp = str(
+        request.data.get(
+            "otp",
+            ""
+        )
+    ).strip()
 
-    # --------------------------------------------------------
-    # Check input
-    # --------------------------------------------------------
+    # =================================================
+    # VALIDATE INPUT
+    # =================================================
 
-    if not email or not entered_otp:
+    if (
+        not email
+        or not entered_otp
+    ):
 
         return Response(
             {
                 "success": False,
-                "message": "Email and verification code are required."
+
+                "message":
+                    "Email and verification code are required."
             },
             status=status.HTTP_400_BAD_REQUEST
         )
 
-    # --------------------------------------------------------
-    # Verify OTP
-    # --------------------------------------------------------
+    # =================================================
+    # VERIFY OTP
+    # =================================================
 
-    verified, message = verify_otp(
-        email,
-        entered_otp
-    )
+    try:
+
+        verified, message = (
+            verify_otp(
+                email,
+                entered_otp
+            )
+        )
+
+    except Exception as error:
+
+        print(
+            "OTP verification error:",
+            repr(error)
+        )
+
+        return Response(
+            {
+                "success": False,
+
+                "message":
+                    "Unable to verify the code right now."
+            },
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+    # =================================================
+    # SUCCESS
+    # =================================================
 
     if verified:
 
         return Response(
             {
                 "success": True,
-                "message": message
+
+                "message":
+                    message
             },
             status=status.HTTP_200_OK
         )
 
+    # =================================================
+    # FAILURE
+    # =================================================
+
     return Response(
         {
             "success": False,
-            "message": message
+
+            "message":
+                message
         },
         status=status.HTTP_400_BAD_REQUEST
     )

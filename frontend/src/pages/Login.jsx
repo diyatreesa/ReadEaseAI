@@ -7,7 +7,14 @@ import {
   signInWithPopup,
 } from "firebase/auth";
 
-import { auth } from "../services/firebase";
+import {
+  collection,
+  query,
+  where,
+  getDocs,
+} from "firebase/firestore";
+
+import { auth, db } from "../services/firebase";
 
 
 function Login() {
@@ -33,14 +40,27 @@ function Login() {
 
     setError("");
 
+    // -------------------------------------------------------
+    // Validate fields
+    // -------------------------------------------------------
+
     if (!email.trim() || !password) {
-      setError("Please enter your email and password.");
+
+      setError(
+        "Please enter your email and password."
+      );
+
       return;
     }
+
 
     try {
 
       setLoading(true);
+
+      // -----------------------------------------------------
+      // Firebase email/password login
+      // -----------------------------------------------------
 
       await signInWithEmailAndPassword(
         auth,
@@ -48,44 +68,84 @@ function Login() {
         password
       );
 
+
+      // -----------------------------------------------------
+      // Login successful
+      // -----------------------------------------------------
+
       navigate("/dashboard");
+
 
     } catch (error) {
 
-      console.error("Login error:", error);
+      console.error(
+        "Login error:",
+        error
+      );
+
 
       switch (error.code) {
 
         case "auth/invalid-credential":
-          setError("Invalid email or password.");
+
+          setError(
+            "Invalid email or password."
+          );
+
           break;
+
 
         case "auth/user-not-found":
-          setError("No account was found with this email.");
+
+          setError(
+            "No account was found with this email. Please register first."
+          );
+
           break;
+
 
         case "auth/wrong-password":
-          setError("Incorrect password.");
+
+          setError(
+            "Incorrect password."
+          );
+
           break;
+
 
         case "auth/invalid-email":
-          setError("Please enter a valid email address.");
+
+          setError(
+            "Please enter a valid email address."
+          );
+
           break;
 
+
         case "auth/too-many-requests":
+
           setError(
             "Too many unsuccessful attempts. Please try again later."
           );
+
           break;
 
+
         case "auth/network-request-failed":
+
           setError(
             "Network error. Please check your internet connection."
           );
+
           break;
 
+
         default:
-          setError("Unable to login. Please try again.");
+
+          setError(
+            "Unable to login. Please try again."
+          );
+
       }
 
     } finally {
@@ -93,70 +153,205 @@ function Login() {
       setLoading(false);
 
     }
+
   };
 
 
   // =========================================================
   // GOOGLE LOGIN
+  //
+  // IMPORTANT:
+  // A Google account must already exist in the
+  // ReadEase Firestore "users" collection.
   // =========================================================
 
   const handleGoogleLogin = async () => {
 
     setError("");
 
+    setGoogleLoading(true);
+
+
     try {
 
-      setGoogleLoading(true);
+      // -----------------------------------------------------
+      // STEP 1 — Open Google login
+      // -----------------------------------------------------
 
-      const provider = new GoogleAuthProvider();
+      const provider =
+        new GoogleAuthProvider();
+
 
       provider.setCustomParameters({
         prompt: "select_account",
       });
 
-      await signInWithPopup(
-        auth,
-        provider
+
+      const result =
+        await signInWithPopup(
+          auth,
+          provider
+        );
+
+
+      const googleUser =
+        result.user;
+
+
+      // -----------------------------------------------------
+      // STEP 2 — Get Google email
+      // -----------------------------------------------------
+
+      const googleEmail =
+        googleUser.email
+          ?.trim()
+          .toLowerCase();
+
+
+      if (!googleEmail) {
+
+        setError(
+          "Unable to get your Google email address."
+        );
+
+        await auth.signOut();
+
+        return;
+      }
+
+
+      // -----------------------------------------------------
+      // STEP 3 — Check Firestore
+      //
+      // We search for this email inside:
+      //
+      // users
+      //
+      // If the email doesn't exist there,
+      // the person has NOT registered in ReadEase.
+      // -----------------------------------------------------
+
+      const usersRef =
+        collection(
+          db,
+          "users"
+        );
+
+
+      const userQuery =
+        query(
+          usersRef,
+          where(
+            "email",
+            "==",
+            googleEmail
+          )
+        );
+
+
+      const userSnapshot =
+        await getDocs(
+          userQuery
+        );
+
+
+      // -----------------------------------------------------
+      // STEP 4 — User NOT registered
+      // -----------------------------------------------------
+
+      if (userSnapshot.empty) {
+
+        // Immediately sign the Google user out.
+        await auth.signOut();
+
+
+        setError(
+          "No ReadEase account was found with this Google email. Please register first."
+        );
+
+
+        return;
+      }
+
+
+      // -----------------------------------------------------
+      // STEP 5 — User exists
+      // -----------------------------------------------------
+
+      console.log(
+        "Existing ReadEase user:",
+        googleEmail
       );
+
+
+      // -----------------------------------------------------
+      // STEP 6 — Allow access
+      // -----------------------------------------------------
 
       navigate("/dashboard");
 
+
     } catch (error) {
 
-      console.error("Google login error:", error);
+      console.error(
+        "Google login error:",
+        error
+      );
+
 
       switch (error.code) {
 
         case "auth/popup-closed-by-user":
-          setError("Google sign-in was cancelled.");
+
+          setError(
+            "Google sign-in was cancelled."
+          );
+
           break;
 
+
         case "auth/popup-blocked":
+
           setError(
             "Google sign-in popup was blocked. Please allow popups for this site."
           );
+
           break;
+
 
         case "auth/cancelled-popup-request":
-          setError("Google sign-in was cancelled.");
+
+          setError(
+            "Google sign-in was cancelled."
+          );
+
           break;
 
+
         case "auth/account-exists-with-different-credential":
+
           setError(
             "An account already exists with this email using another login method."
           );
+
           break;
 
+
         case "auth/network-request-failed":
+
           setError(
             "Network error. Please check your internet connection."
           );
+
           break;
 
+
         default:
+
           setError(
             "Unable to sign in with Google. Please try again."
           );
+
       }
 
     } finally {
@@ -164,6 +359,7 @@ function Login() {
       setGoogleLoading(false);
 
     }
+
   };
 
 
@@ -187,6 +383,7 @@ function Login() {
         d="M21.35 12.27c0-.79-.07-1.55-.23-2.27H12v4.3h5.23a4.47 4.47 0 0 1-1.94 2.93v2.43h3.14c1.84-1.7 2.92-4.2 2.92-7.39Z"
       />
 
+
       {/* Green */}
 
       <path
@@ -194,12 +391,14 @@ function Login() {
         d="M12 21.75c2.63 0 4.84-.87 6.45-2.36l-3.14-2.43c-.87.58-1.98.92-3.31.92-2.54 0-4.69-1.72-5.46-4.03H3.3v2.5A9.75 9.75 0 0 0 12 21.75Z"
       />
 
+
       {/* Yellow */}
 
       <path
         fill="#FBBC05"
         d="M6.54 13.85A5.86 5.86 0 0 1 6.23 12c0-.64.11-1.26.31-1.85v-2.5H3.3A9.75 9.75 0 0 0 2.25 12c0 1.57.38 3.05 1.05 4.35l3.24-2.5Z"
       />
+
 
       {/* Red */}
 
@@ -228,21 +427,52 @@ function Login() {
 
       <div className="hidden lg:flex lg:w-1/2 relative overflow-hidden">
 
+
         {/* Background glow */}
 
-        <div className="absolute top-20 left-20 w-72 h-72 bg-cyan-400/10 rounded-full blur-3xl" />
+        <div
+          className="
+            absolute
+            top-20
+            left-20
+            w-72
+            h-72
+            bg-cyan-400/10
+            rounded-full
+            blur-3xl
+          "
+        />
 
-        <div className="absolute bottom-20 right-20 w-80 h-80 bg-blue-500/10 rounded-full blur-3xl" />
+
+        <div
+          className="
+            absolute
+            bottom-20
+            right-20
+            w-80
+            h-80
+            bg-blue-500/10
+            rounded-full
+            blur-3xl
+          "
+        />
 
 
-        {/* =================================================
-            LEFT CONTENT
+        {/* Left content */}
 
-            Changed from justify-center to justify-start
-            so the content sits higher on the page.
-        ================================================= */}
-
-        <div className="relative z-10 flex flex-col justify-start px-16 xl:px-24 pt-10 xl:pt-14">
+        <div
+          className="
+            relative
+            z-10
+            flex
+            flex-col
+            justify-start
+            px-16
+            xl:px-24
+            pt-10
+            xl:pt-14
+          "
+        >
 
 
           {/* =================================================
@@ -251,16 +481,38 @@ function Login() {
 
           <Link
             to="/"
-            className="flex items-center gap-3 w-fit"
+            className="
+              flex
+              items-center
+              gap-3
+              w-fit
+              group
+            "
           >
 
             <img
               src="/logo.png"
               alt="ReadEase AI Logo"
-              className="w-12 h-12 object-contain"
+              className="
+                w-12
+                h-12
+                object-contain
+                transition
+                duration-200
+                group-hover:scale-105
+              "
             />
 
-            <span className="text-4xl font-bold text-cyan-400">
+
+            <span
+              className="
+                text-4xl
+                font-bold
+                text-cyan-400
+                group-hover:text-cyan-300
+                transition
+              "
+            >
               ReadEase AI
             </span>
 
@@ -271,7 +523,15 @@ function Login() {
               HEADING
           ================================================= */}
 
-          <h2 className="text-5xl xl:text-6xl font-bold leading-tight mt-10">
+          <h2
+            className="
+              text-5xl
+              xl:text-6xl
+              font-bold
+              leading-tight
+              mt-10
+            "
+          >
 
             Make complex text
 
@@ -286,7 +546,15 @@ function Login() {
               DESCRIPTION
           ================================================= */}
 
-          <p className="text-slate-400 text-lg leading-relaxed mt-6 max-w-xl">
+          <p
+            className="
+              text-slate-400
+              text-lg
+              leading-relaxed
+              mt-6
+              max-w-xl
+            "
+          >
 
             ReadEase AI transforms difficult English into
             clear, easy-to-read language while preserving
@@ -302,15 +570,28 @@ function Login() {
           <div className="mt-9 space-y-5">
 
 
-            {/* =================================================
-                FEATURE 1
-            ================================================= */}
+            {/* FEATURE 1 */}
 
             <div className="flex items-center gap-4">
 
-              <div className="w-10 h-10 rounded-xl bg-cyan-400/10 border border-cyan-400/20 flex items-center justify-center text-cyan-400 text-lg">
+              <div
+                className="
+                  w-10
+                  h-10
+                  rounded-xl
+                  bg-cyan-400/10
+                  border
+                  border-cyan-400/20
+                  flex
+                  items-center
+                  justify-center
+                  text-cyan-400
+                  text-lg
+                "
+              >
                 ✓
               </div>
+
 
               <div>
 
@@ -327,15 +608,28 @@ function Login() {
             </div>
 
 
-            {/* =================================================
-                FEATURE 2
-            ================================================= */}
+            {/* FEATURE 2 */}
 
             <div className="flex items-center gap-4">
 
-              <div className="w-10 h-10 rounded-xl bg-cyan-400/10 border border-cyan-400/20 flex items-center justify-center text-cyan-400 text-lg">
+              <div
+                className="
+                  w-10
+                  h-10
+                  rounded-xl
+                  bg-cyan-400/10
+                  border
+                  border-cyan-400/20
+                  flex
+                  items-center
+                  justify-center
+                  text-cyan-400
+                  text-lg
+                "
+              >
                 ✓
               </div>
+
 
               <div>
 
@@ -352,15 +646,28 @@ function Login() {
             </div>
 
 
-            {/* =================================================
-                FEATURE 3
-            ================================================= */}
+            {/* FEATURE 3 */}
 
             <div className="flex items-center gap-4">
 
-              <div className="w-10 h-10 rounded-xl bg-cyan-400/10 border border-cyan-400/20 flex items-center justify-center text-cyan-400 text-lg">
+              <div
+                className="
+                  w-10
+                  h-10
+                  rounded-xl
+                  bg-cyan-400/10
+                  border
+                  border-cyan-400/20
+                  flex
+                  items-center
+                  justify-center
+                  text-cyan-400
+                  text-lg
+                "
+              >
                 ✓
               </div>
+
 
               <div>
 
@@ -390,7 +697,17 @@ function Login() {
           RIGHT SIDE — LOGIN
       ===================================================== */}
 
-      <div className="w-full lg:w-1/2 flex items-center justify-center px-6 py-12">
+      <div
+        className="
+          w-full
+          lg:w-1/2
+          flex
+          items-center
+          justify-center
+          px-6
+          py-12
+        "
+      >
 
         <div className="w-full max-w-md">
 
@@ -403,16 +720,31 @@ function Login() {
 
             <Link
               to="/"
-              className="inline-flex items-center gap-2"
+              className="
+                inline-flex
+                items-center
+                gap-2
+              "
             >
 
               <img
                 src="/logo.png"
                 alt="ReadEase AI Logo"
-                className="w-12 h-12 object-contain"
+                className="
+                  w-12
+                  h-12
+                  object-contain
+                "
               />
 
-              <span className="text-3xl font-bold text-cyan-400">
+
+              <span
+                className="
+                  text-3xl
+                  font-bold
+                  text-cyan-400
+                "
+              >
                 ReadEase AI
               </span>
 
@@ -426,7 +758,18 @@ function Login() {
               LOGIN CARD
           ================================================= */}
 
-          <div className="bg-slate-900/80 border border-slate-800 rounded-3xl p-8 sm:p-10 shadow-2xl backdrop-blur-sm">
+          <div
+            className="
+              bg-slate-900/80
+              border
+              border-slate-800
+              rounded-3xl
+              p-8
+              sm:p-10
+              shadow-2xl
+              backdrop-blur-sm
+            "
+          >
 
 
             {/* =================================================
@@ -436,18 +779,42 @@ function Login() {
             <div className="text-center">
 
 
-              <div className="inline-flex items-center justify-center w-20 h-20 rounded-2xl bg-cyan-400/10 border border-cyan-400/20 mb-5">
+              <div
+                className="
+                  inline-flex
+                  items-center
+                  justify-center
+                  w-20
+                  h-20
+                  rounded-2xl
+                  bg-cyan-400/10
+                  border
+                  border-cyan-400/20
+                  mb-5
+                "
+              >
 
                 <img
                   src="/logo.png"
                   alt="ReadEase AI Logo"
-                  className="w-16 h-16 object-contain"
+                  className="
+                    w-16
+                    h-16
+                    object-contain
+                  "
                 />
 
               </div>
 
 
-              <h1 className="text-3xl sm:text-4xl font-bold text-white">
+              <h1
+                className="
+                  text-3xl
+                  sm:text-4xl
+                  font-bold
+                  text-white
+                "
+              >
                 Welcome Back
               </h1>
 
@@ -467,9 +834,31 @@ function Login() {
 
             {error && (
 
-              <div className="mt-6 bg-red-500/10 border border-red-500/30 text-red-400 rounded-xl p-3 text-sm">
+              <div
+                className="
+                  mt-6
+                  bg-red-500/10
+                  border
+                  border-red-500/30
+                  text-red-400
+                  rounded-xl
+                  p-4
+                  text-sm
+                  leading-relaxed
+                "
+              >
 
-                {error}
+                <div className="flex items-start gap-3">
+
+                  <span className="text-red-400 text-base">
+                    !
+                  </span>
+
+                  <p>
+                    {error}
+                  </p>
+
+                </div>
 
               </div>
 
@@ -491,21 +880,54 @@ function Login() {
 
               <div>
 
-                <label className="block text-sm font-medium text-slate-300 mb-2">
+                <label
+                  className="
+                    block
+                    text-sm
+                    font-medium
+                    text-slate-300
+                    mb-2
+                  "
+                >
                   Email
                 </label>
+
 
                 <input
                   type="email"
                   value={email}
                   onChange={(e) => {
-                    setEmail(e.target.value);
+
+                    setEmail(
+                      e.target.value
+                    );
+
                     setError("");
+
                   }}
                   placeholder="Enter your email"
                   autoComplete="email"
-                  disabled={loading || googleLoading}
-                  className="w-full px-4 py-3.5 rounded-xl bg-slate-800/80 border border-slate-700 text-white placeholder-slate-500 outline-none transition focus:border-cyan-400 focus:ring-2 focus:ring-cyan-400/10 disabled:opacity-60"
+                  disabled={
+                    loading ||
+                    googleLoading
+                  }
+                  className="
+                    w-full
+                    px-4
+                    py-3.5
+                    rounded-xl
+                    bg-slate-800/80
+                    border
+                    border-slate-700
+                    text-white
+                    placeholder-slate-500
+                    outline-none
+                    transition
+                    focus:border-cyan-400
+                    focus:ring-2
+                    focus:ring-cyan-400/10
+                    disabled:opacity-60
+                  "
                 />
 
               </div>
@@ -516,21 +938,54 @@ function Login() {
 
               <div>
 
-                <label className="block text-sm font-medium text-slate-300 mb-2">
+                <label
+                  className="
+                    block
+                    text-sm
+                    font-medium
+                    text-slate-300
+                    mb-2
+                  "
+                >
                   Password
                 </label>
+
 
                 <input
                   type="password"
                   value={password}
                   onChange={(e) => {
-                    setPassword(e.target.value);
+
+                    setPassword(
+                      e.target.value
+                    );
+
                     setError("");
+
                   }}
                   placeholder="Enter your password"
                   autoComplete="current-password"
-                  disabled={loading || googleLoading}
-                  className="w-full px-4 py-3.5 rounded-xl bg-slate-800/80 border border-slate-700 text-white placeholder-slate-500 outline-none transition focus:border-cyan-400 focus:ring-2 focus:ring-cyan-400/10 disabled:opacity-60"
+                  disabled={
+                    loading ||
+                    googleLoading
+                  }
+                  className="
+                    w-full
+                    px-4
+                    py-3.5
+                    rounded-xl
+                    bg-slate-800/80
+                    border
+                    border-slate-700
+                    text-white
+                    placeholder-slate-500
+                    outline-none
+                    transition
+                    focus:border-cyan-400
+                    focus:ring-2
+                    focus:ring-cyan-400/10
+                    disabled:opacity-60
+                  "
                 />
 
               </div>
@@ -543,11 +998,18 @@ function Login() {
 
                 <button
                   type="button"
-                  className="text-sm text-cyan-400 hover:text-cyan-300 transition"
+                  className="
+                    text-sm
+                    text-cyan-400
+                    hover:text-cyan-300
+                    transition
+                  "
                   onClick={() => {
+
                     alert(
                       "Password reset will be added next."
                     );
+
                   }}
                 >
                   Forgot Password?
@@ -561,8 +1023,23 @@ function Login() {
 
               <button
                 type="submit"
-                disabled={loading || googleLoading}
-                className="w-full bg-cyan-400 text-black py-3.5 rounded-xl font-semibold hover:bg-cyan-300 transition duration-200 disabled:opacity-60 disabled:cursor-not-allowed"
+                disabled={
+                  loading ||
+                  googleLoading
+                }
+                className="
+                  w-full
+                  bg-cyan-400
+                  text-black
+                  py-3.5
+                  rounded-xl
+                  font-semibold
+                  hover:bg-cyan-300
+                  transition
+                  duration-200
+                  disabled:opacity-60
+                  disabled:cursor-not-allowed
+                "
               >
 
                 {loading
@@ -581,15 +1058,22 @@ function Login() {
                 OR DIVIDER
             ================================================= */}
 
-            <div className="flex items-center gap-4 my-7">
+            <div
+              className="
+                flex
+                items-center
+                gap-4
+                my-7
+              "
+            >
 
-              <div className="flex-1 h-px bg-slate-800"></div>
+              <div className="flex-1 h-px bg-slate-800" />
 
               <span className="text-sm text-slate-500">
                 OR
               </span>
 
-              <div className="flex-1 h-px bg-slate-800"></div>
+              <div className="flex-1 h-px bg-slate-800" />
 
             </div>
 
@@ -602,19 +1086,25 @@ function Login() {
             <button
               type="button"
               onClick={handleGoogleLogin}
-              disabled={loading || googleLoading}
+              disabled={
+                loading ||
+                googleLoading
+              }
               className="
                 w-full
                 bg-slate-800/80
-                border border-slate-700
+                border
+                border-slate-700
                 text-white
                 py-3.5
                 rounded-xl
                 font-semibold
                 hover:bg-slate-700
                 hover:border-cyan-400
-                transition duration-200
-                flex items-center
+                transition
+                duration-200
+                flex
+                items-center
                 justify-center
                 gap-3
                 disabled:opacity-60
@@ -626,10 +1116,20 @@ function Login() {
 
                 <>
 
-                  <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                  <div
+                    className="
+                      w-5
+                      h-5
+                      border-2
+                      border-white/30
+                      border-t-white
+                      rounded-full
+                      animate-spin
+                    "
+                  />
 
                   <span>
-                    Signing in with Google...
+                    Checking Google account...
                   </span>
 
                 </>
@@ -656,7 +1156,15 @@ function Login() {
                 REGISTER
             ================================================= */}
 
-            <div className="mt-8 pt-6 border-t border-slate-800 text-center">
+            <div
+              className="
+                mt-8
+                pt-6
+                border-t
+                border-slate-800
+                text-center
+              "
+            >
 
               <p className="text-slate-400 text-sm">
 
@@ -664,7 +1172,12 @@ function Login() {
 
                 <Link
                   to="/register"
-                  className="text-cyan-400 hover:text-cyan-300 font-medium transition"
+                  className="
+                    text-cyan-400
+                    hover:text-cyan-300
+                    font-medium
+                    transition
+                  "
                 >
                   Create Account
                 </Link>
@@ -686,7 +1199,12 @@ function Login() {
 
             <Link
               to="/"
-              className="text-sm text-slate-500 hover:text-slate-300 transition"
+              className="
+                text-sm
+                text-slate-500
+                hover:text-slate-300
+                transition
+              "
             >
               ← Back to Home
             </Link>

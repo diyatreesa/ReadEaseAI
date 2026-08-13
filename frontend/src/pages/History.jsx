@@ -523,17 +523,43 @@ function History() {
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-5">
 
 
-          {/* LOGO */}
+          {/* LOGO + BRAND NAME */}
+<div className="flex items-center gap-3">
 
-          <button
-            onClick={() =>
-              navigate("/dashboard")
-            }
-            className="text-2xl sm:text-3xl font-bold text-cyan-400 hover:text-cyan-300 transition w-fit"
-          >
-            ReadEase AI
-          </button>
+  <button
+    type="button"
+    onClick={() => navigate("/dashboard")}
+    className="flex items-center gap-3 group"
+  >
 
+    <img
+      src="/logo.png"
+      alt="ReadEase AI Logo"
+      className="
+        w-15 h-15
+        sm:w-15 sm:h-15
+        object-contain
+        shrink-0
+      "
+    />
+
+    <span
+      className="
+        text-2xl
+        sm:text-2xl
+        font-bold
+        text-cyan-400
+        group-hover:text-cyan-300
+        transition
+        whitespace-nowrap
+      "
+    >
+      ReadEase AI
+    </span>
+
+  </button>
+
+</div>
 
           {/* NAVIGATION */}
 

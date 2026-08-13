@@ -24,12 +24,7 @@ function Navbar() {
         {/* Navigation Links */}
         <div className="flex items-center gap-9">
 
-          <Link
-            to="/"
-            className="text-white hover:text-cyan-400 transition"
-          >
-            Home
-          </Link>
+          
 
           <a
             href="#features"

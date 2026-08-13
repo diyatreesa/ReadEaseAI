@@ -1,93 +1,85 @@
 from wordfreq import zipf_frequency
-
 from .parser import parse_text
 
 
+COMMON_WORDS = {
+    "about", "above", "across", "after", "again", "against",
+    "almost", "always", "among", "another", "around", "because",
+    "before", "between", "both", "called", "change", "changes",
+    "changed", "clear", "clearly", "different", "during", "early",
+    "enough", "every", "example", "first", "following", "found",
+    "general", "given", "good", "great", "group", "groups", "help",
+    "important", "include", "including", "information", "instead",
+    "large", "later", "little", "many", "modern", "most", "much",
+    "need", "needs", "often", "other", "people", "possible",
+    "present", "provide", "provided", "really", "same", "several",
+    "should", "simple", "since", "small", "some", "something",
+    "still", "such", "system", "systems", "their", "there", "these",
+    "they", "those", "through", "together", "under", "used", "using",
+    "usually", "very", "well", "where", "which", "while", "within",
+    "without", "work", "works", "world"
+}
+
+
 def is_difficult_word(word, level="Beginner"):
-    """
-    Determines whether a word is difficult based on
-    how frequently it is used in English.
-    """
+    """Return True only when a word is uncommon enough for the level."""
 
     if not word:
         return False
 
     word = word.lower().strip()
 
-    # Ignore short words
     if len(word) <= 4:
         return False
 
-    frequency = zipf_frequency(
-        word,
-        "en"
-    )
+    if word in COMMON_WORDS:
+        return False
+
+    frequency = zipf_frequency(word, "en")
 
     thresholds = {
-        "Beginner": 4.8,
-        "Intermediate": 4.2,
-        "Advanced": 3.6
+        "Beginner": 4.25,
+        "Intermediate": 3.80,
+        "Advanced": 3.40,
     }
 
-    threshold = thresholds.get(
-        level,
-        4.8
-    )
-
-    return frequency < threshold
+    return frequency < thresholds.get(level, 4.25)
 
 
 def find_difficult_words(text, level="Beginner"):
     """
-    Detects difficult words dynamically.
+    Detect difficult vocabulary across the complete input.
 
-    This function ONLY detects difficult words.
-    It does NOT decide their replacements.
+    The lexical layer only detects words.
+    Gemini supplies meanings and actual replacements.
     """
 
     doc = parse_text(text)
 
     difficult_words = []
-
-    seen_words = set()
+    seen = set()
 
     for token in doc:
 
-        # Ignore punctuation and numbers
         if not token.is_alpha:
             continue
 
-        # Ignore stop words
         if token.is_stop:
             continue
 
-        # Get base form
-        base_word = (
-            token.lemma_
-            .lower()
-            .strip()
-        )
+        base_word = token.lemma_.lower().strip()
 
-        if not base_word:
+        if not base_word or base_word in seen:
             continue
 
-        # Avoid duplicate words
-        if base_word in seen_words:
-            continue
+        if is_difficult_word(base_word, level):
 
-        # Check difficulty
-        if is_difficult_word(
-            base_word,
-            level
-        ):
-
-            difficult_words.append({
-                "word": token.text
-            })
-
-            seen_words.add(
-                base_word
+            difficult_words.append(
+                {
+                    "word": token.text
+                }
             )
 
-    # Maximum 12 difficult words
-    return difficult_words[:12]
+            seen.add(base_word)
+
+    return difficult_words

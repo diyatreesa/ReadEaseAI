@@ -1,10 +1,11 @@
-import os
-import time
-import random
 import json
+import os
+import random
+import time
 
-from google import genai
 from dotenv import load_dotenv
+from google import genai
+from google.genai import types
 
 
 # ============================================================
@@ -13,100 +14,310 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+API_KEY = os.getenv("GEMINI_API_KEY")
+
+if not API_KEY:
+    raise ValueError(
+        "GEMINI_API_KEY is not configured in the .env file."
+    )
+
 
 # ============================================================
 # GEMINI CLIENT
 # ============================================================
 
 client = genai.Client(
-    api_key=os.getenv("GEMINI_API_KEY")
+    api_key=API_KEY
 )
 
 
 # ============================================================
-# SIMPLIFY TEXT
+# MODEL
 # ============================================================
 
-def simplify_text_ai(
-    text,
-    level,
-    difficult_words
-):
-    """
-    Simplifies the given text using Gemini.
+MODEL_NAME = "gemini-3.6-flash"
 
-    Gemini returns:
-    1. The complete simplified text
-    2. The actual difficult-word replacements
 
-    No vocabulary is hardcoded.
-    """
+# ============================================================
+# READING LEVEL INSTRUCTIONS
+# ============================================================
 
-    # ========================================================
-    # READING LEVEL INSTRUCTIONS
-    # ========================================================
+def get_level_instructions(level):
+
+    # --------------------------------------------------------
+    # BEGINNER
+    # --------------------------------------------------------
 
     if level == "Beginner":
 
-        level_instructions = """
-BEGINNER LEVEL:
+        return """
+BEGINNER READING LEVEL
 
-- Use very simple, everyday English.
-- Replace difficult, technical, academic, or formal
-  words with easier words or phrases.
-- Use short and clear sentences.
-- Break long sentences into shorter sentences when needed.
-- Write as if explaining the text to someone learning English.
-- Keep all important information.
-- Do not summarize the text.
+Goal:
+Make the text easy for a general reader to understand.
+
+Vocabulary:
+- Prefer common everyday English.
+- Replace genuinely difficult words with simple natural words.
+- Do not replace words that are already simple.
+- Do not simplify just for the sake of changing words.
+- Keep important technical terms when changing them would reduce accuracy.
+- Avoid childish vocabulary.
+
+Sentences:
+- Prefer short and clear sentences.
+- Break very long sentences when this improves readability.
+- Use simple grammar.
+- Prefer active voice when natural.
+- Keep the same ideas as the original.
+
+Style:
+- Natural.
+- Clear.
+- Mature.
+- Easy to understand.
+
+IMPORTANT:
+Beginner means simpler language, NOT less information.
+Do NOT summarize.
 """
 
-    elif level == "Intermediate":
 
-        level_instructions = """
-INTERMEDIATE LEVEL:
+    # --------------------------------------------------------
+    # INTERMEDIATE
+    # --------------------------------------------------------
 
-- Use clear and moderately simple English.
-- Replace unnecessarily difficult words with easier alternatives.
-- Keep important academic or technical terms when necessary.
-- Use medium-length sentences.
-- Break very long or confusing sentences when necessary.
-- Keep all important information.
-- Do not summarize the text.
+    if level == "Intermediate":
+
+        return """
+INTERMEDIATE READING LEVEL
+
+Goal:
+Make the text clearer and moderately easier to understand.
+
+Vocabulary:
+- Replace genuinely difficult vocabulary with familiar alternatives.
+- Keep useful academic vocabulary when appropriate.
+- Keep important technical terminology.
+- Do not replace simple words unnecessarily.
+- Do not make every word simpler.
+
+Sentences:
+- Use clear medium-length sentences.
+- Simplify complicated grammar.
+- Improve sentence flow.
+- Break very long sentences when useful.
+- Prefer natural active voice.
+
+Style:
+- Clear.
+- Natural.
+- Mature.
+- Educational.
+
+IMPORTANT:
+The result should still sound like normal educated English.
+Do NOT summarize.
 """
 
-    elif level == "Advanced":
 
-        level_instructions = """
-ADVANCED LEVEL:
+    # --------------------------------------------------------
+    # ADVANCED
+    # --------------------------------------------------------
 
-- Keep a mature and natural writing style.
-- Preserve important academic and technical vocabulary
-  when appropriate.
-- Simplify unnecessarily difficult words or sentence
-  structures.
-- Maintain the original level of detail.
-- Do not make the text overly simple.
-- Do not summarize the text.
+    if level == "Advanced":
+
+        return """
+ADVANCED READING LEVEL
+
+Goal:
+Provide light simplification while preserving professional quality.
+
+Vocabulary:
+- Keep most academic and professional vocabulary.
+- Replace only unnecessarily difficult words.
+- Preserve technical, scientific, legal and medical terminology when needed.
+- Do not simplify words that are already suitable.
+
+Sentences:
+- Improve unnecessarily complicated structures.
+- Improve clarity and flow.
+- Break extremely long sentences only when necessary.
+
+Style:
+- Professional.
+- Natural.
+- Clear.
+- Slightly easier than the original.
+
+IMPORTANT:
+Advanced must NOT become Beginner-level English.
+Do NOT summarize.
 """
 
-    else:
 
-        level_instructions = """
-Use clear and simple English while preserving
-the original meaning and all important information.
+    # --------------------------------------------------------
+    # DEFAULT
+    # --------------------------------------------------------
+
+    return """
+Use clear natural English while preserving the complete meaning,
+important information and factual accuracy.
+
+Do NOT summarize.
 """
+
+
+# ============================================================
+# MAIN AI FUNCTION
+# ============================================================
+
+def simplify_text_ai(text, level, difficult_words):
+    """
+    Simplify text using Gemini.
+
+    Returns:
+
+    {
+        "simplified_text": "...",
+
+        "difficult_words": [
+            {
+                "word": "...",
+                "meaning": "...",
+                "replacement": "..."
+            }
+        ]
+    }
+
+    replacement is empty when the word was not changed.
+    """
+
+    # ========================================================
+    # VALIDATE TEXT
+    # ========================================================
+
+    if not isinstance(text, str):
+        text = str(text)
+
+    text = text.strip()
+
+    if not text:
+        raise ValueError(
+            "Text cannot be empty."
+        )
 
 
     # ========================================================
-    # GET DIFFICULT WORDS
+    # VALIDATE LEVEL
     # ========================================================
 
-    difficult_word_list = [
-        item["word"]
-        for item in difficult_words
-        if item.get("word")
-    ]
+    if level not in {
+        "Beginner",
+        "Intermediate",
+        "Advanced"
+    }:
+
+        level = "Beginner"
+
+
+    # ========================================================
+    # CLEAN DIFFICULT WORD LIST
+    # ========================================================
+
+    if not isinstance(
+        difficult_words,
+        list
+    ):
+
+        difficult_words = []
+
+
+    difficult_word_list = []
+
+    seen = set()
+
+
+    for item in difficult_words:
+
+        if isinstance(
+            item,
+            dict
+        ):
+
+            word = item.get(
+                "word",
+                ""
+            )
+
+        else:
+
+            word = item
+
+
+        if word is None:
+            continue
+
+
+        word = str(
+            word
+        ).strip()
+
+
+        if not word:
+            continue
+
+
+        # Remove accidental punctuation
+        word = word.strip(
+            ".,!?;:\"'()[]{}"
+        )
+
+
+        if not word:
+            continue
+
+
+        word_key = word.lower()
+
+
+        if word_key in seen:
+            continue
+
+
+        seen.add(
+            word_key
+        )
+
+
+        difficult_word_list.append(
+            word
+        )
+
+
+    # ========================================================
+    # LEVEL INSTRUCTIONS
+    # ========================================================
+
+    level_instructions = get_level_instructions(
+        level
+    )
+
+
+    # ========================================================
+    # DIFFICULT WORD LIST
+    # ========================================================
+
+    detected_text = ", ".join(
+        difficult_word_list
+    )
+
+
+    if not detected_text:
+
+        detected_text = (
+            "No difficult words were detected."
+        )
 
 
     # ========================================================
@@ -114,60 +325,314 @@ the original meaning and all important information.
     # ========================================================
 
     prompt = f"""
-You are an English text simplification assistant.
 
-Your task is to rewrite the original text according
-to the selected reading level.
+You are ReadEase, an AI-powered English
+TEXT SIMPLIFICATION SYSTEM.
 
-SELECTED READING LEVEL:
+Your task is to simplify the ORIGINAL TEXT.
+
+This is NOT a summarization task.
+
+The final text must preserve the complete meaning
+and all important information from the original.
+
+============================================================
+READING LEVEL
+============================================================
+
 {level}
 
-READING LEVEL INSTRUCTIONS:
+============================================================
+LEVEL INSTRUCTIONS
+============================================================
+
 {level_instructions}
 
-ORIGINAL TEXT:
-{text}
+============================================================
+MOST IMPORTANT RULE
+============================================================
 
-DIFFICULT WORDS DETECTED IN THE ORIGINAL TEXT:
-{json.dumps(difficult_word_list)}
+SIMPLIFY THE LANGUAGE, NOT THE INFORMATION.
 
-IMPORTANT RULES:
+The simplified text must communicate the same ideas
+as the original text.
 
-1. Preserve the original meaning completely.
+Do not shorten the text just because it is easier.
 
-2. Do NOT summarize the text.
+Do not remove important information.
 
-3. Do NOT remove important information.
+Do not invent information.
 
-4. Do NOT add new information.
+============================================================
+MEANING PRESERVATION
+============================================================
 
-5. Simplify difficult words when appropriate.
+You MUST:
 
-6. Make the simplified text natural and grammatically correct.
+1. Preserve every important idea.
 
-7. If you replace a difficult word, the replacement must
-   actually appear in the simplified text.
+2. Preserve all factual information.
 
-8. A replacement can be one word or multiple words.
+3. Preserve names.
 
-9. The replacement must use the exact wording that appears
-   in the simplified text.
+4. Preserve organizations.
 
-10. Do not invent replacement words that are not present
-    in the simplified text.
+5. Preserve places.
 
-11. If a difficult word does not need to be changed,
-    you may leave it out of the mapping.
+6. Preserve dates.
 
-12. Do not provide explanations.
+7. Preserve numbers.
 
-13. Do not provide definitions.
+8. Preserve percentages.
 
-14. Do not provide a separate list outside the JSON.
+9. Preserve measurements.
 
-15. Return ONLY valid JSON.
+10. Preserve conditions.
 
-Return exactly this structure:
+11. Preserve comparisons.
+
+12. Preserve relationships between ideas.
+
+13. Preserve technical information.
+
+14. Preserve uncertainty.
+
+For example:
+
+"may" must not become "will".
+
+"often" must not become "always".
+
+"approximately" must not become an exact number.
+
+============================================================
+DO NOT ADD INFORMATION
+============================================================
+
+Do NOT add:
+
+- new facts
+- new examples
+- new explanations
+- new adjectives
+- new opinions
+- new technical descriptions
+- new conclusions
+
+Only simplify what is already present.
+
+For example:
+
+Original:
+"modern institutional discourse"
+
+Bad:
+"modern official technical communication"
+
+Why bad?
+
+Because "technical" and "official" may add information
+that was not explicitly present.
+
+Good:
+"modern institutional communication"
+
+============================================================
+VOCABULARY SIMPLIFICATION
+============================================================
+
+Do NOT perform blind word replacement.
+
+A difficult word should only be replaced when:
+
+1. The replacement is genuinely easier.
+
+2. The meaning is preserved.
+
+3. The replacement fits the sentence.
+
+4. The replacement sounds natural.
+
+5. The replacement is appropriate for the selected level.
+
+6. The replacement does not introduce a new meaning.
+
+A difficult word MAY remain unchanged if replacing it
+would make the sentence less accurate or unnatural.
+
+============================================================
+IMPORTANT: NATURAL ENGLISH
+============================================================
+
+The result must sound like something a real person
+would naturally write.
+
+Avoid:
+
+- repeated words
+- awkward synonyms
+- unnecessary adjectives
+- unnatural phrases
+- word-for-word translation
+- mechanical replacement
+- redundant expressions
+
+NEVER create phrases such as:
+
+"widespread rapid spread"
+
+"simple easy understandable"
+
+"confusing technical jargon"
+
+when the original does not contain all those ideas.
+
+Choose ONE natural expression.
+
+For example:
+
+Original:
+"The ubiquitous proliferation of..."
+
+Natural:
+"The widespread use of..."
+
+NOT:
+"The widespread rapid spread of..."
+
+============================================================
+SENTENCE STRUCTURE
+============================================================
+
+You may restructure sentences when necessary.
+
+However:
+
+- Do not remove ideas.
+- Do not combine unrelated ideas.
+- Do not create new ideas.
+- Do not change the logical relationship.
+- Do not change cause and effect.
+- Do not change comparisons.
+
+If the original contains multiple sentences,
+try to preserve approximately the same number of sentences.
+
+Breaking one very long sentence into two shorter sentences
+is allowed when it improves readability.
+
+============================================================
+PARAGRAPH COMPLETENESS
+============================================================
+
+Process the ENTIRE original text.
+
+Do not simplify only the first sentence.
+
+Do not simplify only the difficult words.
+
+Read and rewrite the complete paragraph.
+
+Every sentence must be considered.
+
+============================================================
+DIFFICULT WORD MEANINGS
+============================================================
+
+For EVERY detected difficult word, provide:
+
+- the original word
+- a short plain-English meaning
+- the replacement used, if any
+
+The meaning should explain the word itself,
+not merely repeat the replacement.
+
+Example:
+
+"ubiquitous"
+
+Meaning:
+"Found everywhere; very common."
+
+Replacement:
+"widespread"
+
+============================================================
+REPLACEMENTS
+============================================================
+
+Only report a replacement if:
+
+1. The original word was actually changed.
+
+2. The replacement appears in the simplified text.
+
+3. The replacement is genuinely simpler.
+
+4. The meaning is preserved.
+
+If the word was NOT changed:
+
+"replacement": ""
+
+Do not invent a replacement just because
+the word is difficult.
+
+============================================================
+DETECTED DIFFICULT WORDS
+============================================================
+
+{detected_text}
+
+============================================================
+FINAL QUALITY CHECK
+============================================================
+
+Before returning the answer, internally check:
+
+[ ] Did I simplify the ENTIRE text?
+
+[ ] Did I preserve every important idea?
+
+[ ] Did I avoid summarizing?
+
+[ ] Did I avoid removing information?
+
+[ ] Did I avoid adding information?
+
+[ ] Did I preserve names?
+
+[ ] Did I preserve numbers?
+
+[ ] Did I preserve dates?
+
+[ ] Did I preserve technical information?
+
+[ ] Did I preserve uncertainty?
+
+[ ] Did I avoid repetitive vocabulary?
+
+[ ] Did I avoid awkward synonyms?
+
+[ ] Did I avoid unnecessary adjectives?
+
+[ ] Does the result sound natural?
+
+[ ] Is the selected reading level respected?
+
+[ ] Did I provide a meaning for every detected word?
+
+[ ] Does every reported replacement actually appear
+    in the simplified text?
+
+============================================================
+OUTPUT FORMAT
+============================================================
+
+Return ONLY valid JSON.
+
+Use exactly this structure:
 
 {{
     "simplified_text": "complete simplified text",
@@ -175,18 +640,114 @@ Return exactly this structure:
     "difficult_words": [
         {{
             "word": "original difficult word",
-            "replacement": "actual replacement used"
+            "meaning": "short plain-English meaning",
+            "replacement": "actual replacement or empty string"
         }}
     ]
 }}
+
+============================================================
+ORIGINAL TEXT
+============================================================
+
+{text}
+
 """
+
+
+    # ========================================================
+    # RESPONSE SCHEMA
+    # ========================================================
+
+    response_schema = {
+
+        "type": "OBJECT",
+
+        "properties": {
+
+            "simplified_text": {
+                "type": "STRING"
+            },
+
+            "difficult_words": {
+
+                "type": "ARRAY",
+
+                "items": {
+
+                    "type": "OBJECT",
+
+                    "properties": {
+
+                        "word": {
+                            "type": "STRING"
+                        },
+
+                        "meaning": {
+                            "type": "STRING"
+                        },
+
+                        "replacement": {
+                            "type": "STRING"
+                        }
+
+                    },
+
+                    "required": [
+                        "word",
+                        "meaning",
+                        "replacement"
+                    ]
+                }
+            }
+        },
+
+        "required": [
+            "simplified_text",
+            "difficult_words"
+        ]
+    }
+
+
+    # ========================================================
+    # DEBUG INFORMATION
+    # ========================================================
+
+    print()
+    print("=" * 70)
+    print("READEASE AI REQUEST")
+    print("=" * 70)
+
+    print(
+        "Model:",
+        MODEL_NAME
+    )
+
+    print(
+        "Reading level:",
+        level
+    )
+
+    print(
+        "Characters:",
+        len(text)
+    )
+
+    print(
+        "Detected difficult words:",
+        difficult_word_list
+    )
+
+    print("=" * 70)
 
 
     # ========================================================
     # GEMINI REQUEST
     # ========================================================
 
-    max_attempts = 4
+    max_attempts = 3
+
+    last_error = None
 
 
     for attempt in range(
@@ -195,43 +756,42 @@ Return exactly this structure:
 
         try:
 
+            print(
+                f"Gemini attempt {attempt + 1}/{max_attempts}"
+            )
+
+
             response = client.models.generate_content(
-                model="gemini-3.5-flash",
-                contents=prompt
+
+                model=MODEL_NAME,
+
+                contents=prompt,
+
+                config=types.GenerateContentConfig(
+
+                    response_mime_type="application/json",
+
+                    response_schema=response_schema,
+
+                    temperature=0.10,
+
+                    max_output_tokens=12000
+                )
             )
 
 
             # =================================================
-            # CHECK RESPONSE
+            # GET RESPONSE
             # =================================================
 
-            if not response.text:
+            result = response.text
 
-                raise Exception(
+
+            if not result:
+
+                raise ValueError(
                     "Gemini returned an empty response."
                 )
-
-
-            result = response.text.strip()
-
-
-            # =================================================
-            # REMOVE MARKDOWN CODE BLOCKS
-            # =================================================
-
-            if result.startswith("```"):
-
-                result = result.replace(
-                    "```json",
-                    ""
-                )
-
-                result = result.replace(
-                    "```",
-                    ""
-                )
-
-                result = result.strip()
 
 
             # =================================================
@@ -239,12 +799,12 @@ Return exactly this structure:
             # =================================================
 
             data = json.loads(
-                result
+                result.strip()
             )
 
 
             # =================================================
-            # GET SIMPLIFIED TEXT
+            # SIMPLIFIED TEXT
             # =================================================
 
             simplified_text = str(
@@ -257,40 +817,42 @@ Return exactly this structure:
 
             if not simplified_text:
 
-                raise Exception(
+                raise ValueError(
                     "Gemini returned empty simplified text."
                 )
 
 
             # =================================================
-            # GET MAPPINGS
+            # CLEAN DIFFICULT WORDS
             # =================================================
 
-            mappings = data.get(
+            returned_words = data.get(
                 "difficult_words",
                 []
             )
 
 
             if not isinstance(
-                mappings,
+                returned_words,
                 list
             ):
 
-                mappings = []
+                returned_words = []
+
+
+            cleaned = []
+
+            seen = set()
 
 
             # =================================================
-            # VALIDATE MAPPINGS
+            # PROCESS GEMINI VOCABULARY
             # =================================================
 
-            valid_mappings = []
-
-
-            for mapping in mappings:
+            for item in returned_words:
 
                 if not isinstance(
-                    mapping,
+                    item,
                     dict
                 ):
 
@@ -298,114 +860,160 @@ Return exactly this structure:
 
 
                 word = str(
-                    mapping.get(
+                    item.get(
                         "word",
                         ""
                     )
                 ).strip()
 
 
+                meaning = str(
+                    item.get(
+                        "meaning",
+                        ""
+                    )
+                ).strip()
+
+
                 replacement = str(
-                    mapping.get(
+                    item.get(
                         "replacement",
                         ""
                     )
                 ).strip()
 
 
-                # ---------------------------------------------
-                # Ignore empty mappings
-                # ---------------------------------------------
-
                 if not word:
+                    continue
+
+
+                word_key = word.lower()
+
+
+                if word_key in seen:
+                    continue
+
+
+                # Only accept words detected by lexical.py
+                if word_key not in {
+                    w.lower()
+                    for w in difficult_word_list
+                }:
 
                     continue
 
 
-                if not replacement:
-
-                    continue
-
-
-                # ---------------------------------------------
-                # Make sure the word was actually detected
-                # as a difficult word
-                # ---------------------------------------------
-
-                detected = any(
-
-                    item["word"].lower()
-                    ==
-                    word.lower()
-
-                    for item
-                    in difficult_words
-
+                seen.add(
+                    word_key
                 )
 
 
-                if not detected:
+                # ------------------------------------------------
+                # Meaning fallback
+                # ------------------------------------------------
 
-                    continue
+                if not meaning:
+
+                    meaning = (
+                        "Meaning not available."
+                    )
 
 
-                # ---------------------------------------------
-                # Store mapping
-                # ---------------------------------------------
+                # ------------------------------------------------
+                # Validate replacement
+                # ------------------------------------------------
 
-                valid_mappings.append({
+                if replacement:
 
-                    "word":
-                        word,
+                    # Replacement must appear in output
+                    if (
+                        replacement.lower()
+                        not in
+                        simplified_text.lower()
+                    ):
 
-                    "replacement":
-                        replacement
+                        replacement = ""
 
-                })
+
+                    # Replacement cannot equal original
+                    elif (
+                        replacement.lower()
+                        == word.lower()
+                    ):
+
+                        replacement = ""
+
+
+                # ------------------------------------------------
+                # Store result
+                # ------------------------------------------------
+
+                cleaned.append(
+                    {
+                        "word": word,
+                        "meaning": meaning,
+                        "replacement": replacement
+                    }
+                )
 
 
             # =================================================
-            # DEBUG OUTPUT
+            # GUARANTEE EVERY DETECTED WORD IS REPRESENTED
+            # =================================================
+
+            existing_words = {
+                item["word"].lower()
+                for item in cleaned
+            }
+
+
+            for word in difficult_word_list:
+
+                if (
+                    word.lower()
+                    not in existing_words
+                ):
+
+                    cleaned.append(
+                        {
+                            "word": word,
+                            "meaning": (
+                                "Meaning not available."
+                            ),
+                            "replacement": ""
+                        }
+                    )
+
+
+            # =================================================
+            # RETURN RESULT
             # =================================================
 
             print()
-            print(
-                "=========================================="
-            )
+            print("=" * 70)
+            print("READEASE AI RESPONSE")
+            print("=" * 70)
 
             print(
-                "GEMINI SIMPLIFIED TEXT:"
+                "Simplified text:"
             )
 
             print(
                 simplified_text
             )
 
-
-            print()
-            print(
-                "GEMINI WORD MAPPINGS:"
-            )
-
-
-            print(
-                json.dumps(
-                    valid_mappings,
-                    indent=2
-                )
-            )
-
-
-            print(
-                "=========================================="
-            )
-
             print()
 
+            print(
+                "Vocabulary:"
+            )
 
-            # =================================================
-            # RETURN RESULT
-            # =================================================
+            print(
+                cleaned
+            )
+
+            print("=" * 70)
+
 
             return {
 
@@ -413,154 +1021,36 @@ Return exactly this structure:
                     simplified_text,
 
                 "difficult_words":
-                    valid_mappings
-
+                    cleaned
             }
 
 
-        # =====================================================
-        # INVALID JSON
-        # =====================================================
+        # ====================================================
+        # ERROR HANDLING
+        # ====================================================
 
-        except json.JSONDecodeError as e:
+        except Exception as error:
 
-            print()
-            print(
-                "Gemini returned invalid JSON."
-            )
-
-            print(
-                "JSON error:",
-                str(e)
-            )
+            last_error = error
 
 
             print(
-                "Raw Gemini response:"
+                "Gemini error:",
+                repr(error)
             )
-
-            print(
-                result
-            )
-
-            print()
 
 
             if attempt < max_attempts - 1:
 
-                wait_time = (
-                    2 ** attempt
-                    +
-                    random.uniform(
-                        0,
-                        1
-                    )
-                )
-
-
-                print(
-                    f"Retrying in "
-                    f"{wait_time:.1f} seconds..."
-                )
-
-
                 time.sleep(
-                    wait_time
+                    2 + random.random()
                 )
-
-
-                continue
-
-
-            raise Exception(
-                "Gemini returned an invalid response."
-            )
-
-
-        # =====================================================
-        # OTHER ERRORS
-        # =====================================================
-
-        except Exception as e:
-
-            error_message = str(e)
-
-
-            print()
-            print(
-                f"Gemini attempt "
-                f"{attempt + 1} failed:"
-            )
-
-            print(
-                error_message
-            )
-
-
-            # -------------------------------------------------
-            # Retry temporary server errors
-            # -------------------------------------------------
-
-            if (
-
-                "503"
-                in error_message
-
-                or
-
-                "UNAVAILABLE"
-                in error_message
-
-                or
-
-                "429"
-                in error_message
-
-                or
-
-                "500"
-                in error_message
-
-            ):
-
-                if attempt < max_attempts - 1:
-
-                    wait_time = (
-                        2 ** attempt
-                        +
-                        random.uniform(
-                            0,
-                            1
-                        )
-                    )
-
-
-                    print(
-                        f"Retrying in "
-                        f"{wait_time:.1f} seconds..."
-                    )
-
-
-                    time.sleep(
-                        wait_time
-                    )
-
-
-                    continue
-
-
-            # -------------------------------------------------
-            # Non-temporary error
-            # -------------------------------------------------
-
-            raise
 
 
     # ========================================================
     # ALL ATTEMPTS FAILED
     # ========================================================
 
-    raise Exception(
-        "Gemini is currently unavailable. "
-        "Please try again later."
+    raise RuntimeError(
+        f"Gemini simplification failed: {last_error}"
     )

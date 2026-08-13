@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
+import "../App.css";
+
 import {
   collection,
   addDoc,
@@ -8,6 +10,79 @@ import {
 } from "firebase/firestore";
 
 import { auth, db } from "../services/firebase";
+
+
+function UIIcon({ name, size = 18, className = "" }) {
+  const props = {
+    width: size,
+    height: size,
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: 1.8,
+    strokeLinecap: "round",
+    strokeLinejoin: "round",
+    className,
+  };
+
+  const icons = {
+    file: (
+      <>
+        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+        <path d="M14 2v6h6" />
+        <path d="M8 13h8M8 17h6" />
+      </>
+    ),
+    clip: (
+      <path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
+    ),
+    volume: (
+      <>
+        <path d="M11 5 6 9H2v6h4l5 4z" />
+        <path d="M19 9a5 5 0 0 1 0 6M16.5 6.5a9 9 0 0 1 0 11" />
+      </>
+    ),
+    sparkle: (
+      <>
+        <path d="m12 3-1.2 4.1L7 8.4l3.8 1.3L12 14l1.2-4.3L17 8.4l-3.8-1.3z" />
+        <path d="m19 14-.6 2.4L16 17l2.4.6L19 20l.6-2.4L22 17l-2.4-.6z" />
+      </>
+    ),
+    chart: (
+      <>
+        <path d="M4 19V5M4 19h16" />
+        <path d="m7 15 3-4 3 2 5-6" />
+      </>
+    ),
+    clock: (
+      <>
+        <circle cx="12" cy="12" r="9" />
+        <path d="M12 7v5l3 2" />
+      </>
+    ),
+    check: <path d="m5 12 4 4L19 6" />,
+    trash: (
+      <>
+        <path d="M3 6h18M8 6V4h8v2" />
+        <path d="m19 6-1 15H6L5 6M10 11v6M14 11v6" />
+      </>
+    ),
+    back: (
+      <>
+        <path d="M19 12H5" />
+        <path d="m12 19-7-7 7-7" />
+      </>
+    ),
+    next: (
+      <>
+        <path d="M5 12h14" />
+        <path d="m12 5 7 7-7 7" />
+      </>
+    ),
+  };
+
+  return <svg {...props}>{icons[name] || null}</svg>;
+}
 
 function Simplify() {
   const navigate = useNavigate();
@@ -22,6 +97,7 @@ function Simplify() {
   const [level, setLevel] = useState("Beginner");
 
   const [difficultWords, setDifficultWords] = useState([]);
+  const [changes, setChanges] = useState([]);
 
   const [loading, setLoading] = useState(false);
 
@@ -261,6 +337,11 @@ function Simplify() {
           ? result.difficult_words
           : []
       );
+      setChanges(
+  Array.isArray(result.changes)
+    ? result.changes
+    : []
+);
 
       // =================================================
       // READABILITY
@@ -421,217 +502,198 @@ function Simplify() {
   // CLEAR
   // =====================================================
 
-  const handleClear = () => {
-    setText("");
-    setSimplifiedText("");
+ const handleClear = () => {
+  setText("");
+  setSimplifiedText("");
 
-    setSelectedFile(null);
+  setSelectedFile(null);
 
-    setDifficultWords([]);
+  setDifficultWords([]);
+  setChanges([]);
 
-    setError("");
+  setError("");
 
-    resetScores();
+  resetScores();
 
-    const fileInput =
-      document.getElementById(
-        "document-upload"
-      );
+  const fileInput =
+    document.getElementById(
+      "document-upload"
+    );
 
-    if (fileInput) {
-      fileInput.value = "";
-    }
-  };
+  if (fileInput) {
+    fileInput.value = "";
+  }
+};
 
   // =====================================================
   // HIGHLIGHT ORIGINAL TEXT
   // =====================================================
 
-  const highlightOriginalText = () => {
-    if (!text) {
-      return null;
-    }
+ const highlightOriginalText = () => {
+  if (!text) {
+    return null;
+  }
 
-    if (
-      !Array.isArray(difficultWords) ||
-      difficultWords.length === 0
-    ) {
-      return text;
-    }
+  if (
+    !Array.isArray(difficultWords) ||
+    difficultWords.length === 0
+  ) {
+    return text;
+  }
 
-    const mappings = difficultWords
-      .map((item) => ({
-        word: item.word || "",
-        replacement: item.replacement || "",
-      }))
-      .filter(
-        (item) =>
-          item.word.trim()
+  const words = difficultWords
+    .map((item) => {
+      if (typeof item === "string") {
+        return item.trim();
+      }
+
+      if (item && typeof item === "object") {
+        return String(item.word || "").trim();
+      }
+
+      return "";
+    })
+    .filter(Boolean);
+
+  if (words.length === 0) {
+    return text;
+  }
+
+  // Longest words first
+  words.sort(
+    (a, b) => b.length - a.length
+  );
+
+  const escapedWords = words.map((word) =>
+    word.replace(
+      /[.*+?^${}()|[\]\\]/g,
+      "\\$&"
+    )
+  );
+
+  const regex = new RegExp(
+    `\\b(${escapedWords.join("|")})\\b`,
+    "gi"
+  );
+
+  const parts = text.split(regex);
+
+  return parts.map(
+    (part, index) => {
+
+      const matchedWord = words.find(
+        (word) =>
+          word.toLowerCase() ===
+          part.toLowerCase()
       );
 
-    if (mappings.length === 0) {
-      return text;
-    }
-
-    // Sort longest words first.
-    // This prevents shorter words from interfering
-    // with longer words.
-    const escapedWords = mappings
-      .sort(
-        (a, b) =>
-          b.word.length -
-          a.word.length
-      )
-      .map((item) =>
-        item.word.replace(
-          /[.*+?^${}()|[\]\\]/g,
-          "\\$&"
-        )
-      );
-
-    // IMPORTANT:
-    // \b makes sure only complete words are matched.
-    //
-    // Example:
-    // "is" will NOT match inside "this".
-    const regex = new RegExp(
-      `\\b(${escapedWords.join("|")})\\b`,
-      "gi"
-    );
-
-    const parts =
-      text.split(regex);
-
-    return parts.map(
-      (part, index) => {
-        const mapping =
-          mappings.find(
-            (item) =>
-              item.word.toLowerCase() ===
-              part.toLowerCase()
-          );
-
-        if (mapping) {
-          return (
-            <span
-              key={index}
-              className="bg-yellow-500/30 text-yellow-200 px-1 rounded"
-              title={
-                mapping.replacement
-                  ? `Simpler word: ${mapping.replacement}`
-                  : undefined
-              }
-            >
-              {part}
-            </span>
-          );
-        }
-
+      if (matchedWord) {
         return (
-          <span key={index}>
+          <span
+            key={index}
+            className="bg-yellow-500/30 text-yellow-200 px-1 rounded"
+            title="Difficult word"
+          >
             {part}
           </span>
         );
       }
-    );
-  };
+
+      return (
+        <span key={index}>
+          {part}
+        </span>
+      );
+    }
+  );
+};
 
   // =====================================================
   // HIGHLIGHT SIMPLIFIED TEXT
   // =====================================================
 
-  const highlightSimplifiedText = () => {
-    if (!simplifiedText) {
-      return null;
-    }
+ const highlightSimplifiedText = () => {
+  if (!simplifiedText) {
+    return null;
+  }
 
-    if (
-      !Array.isArray(difficultWords) ||
-      difficultWords.length === 0
-    ) {
-      return simplifiedText;
-    }
+  if (
+    !Array.isArray(changes) ||
+    changes.length === 0
+  ) {
+    return simplifiedText;
+  }
 
-    const mappings = difficultWords
-      .map((item) => ({
-        word: item.word || "",
-        replacement: item.replacement || "",
-      }))
-      .filter(
-        (item) =>
-          item.replacement.trim()
-      );
-
-    if (mappings.length === 0) {
-      return simplifiedText;
-    }
-
-    // Sort longest replacements first.
-    const escapedWords = mappings
-      .sort(
-        (a, b) =>
-          b.replacement.length -
-          a.replacement.length
-      )
-      .map((item) =>
-        item.replacement.replace(
-          /[.*+?^${}()|[\]\\]/g,
-          "\\$&"
-        )
-      );
-
-    // IMPORTANT FIX
-    //
-    // We use \b so that a replacement such as
-    // "is" cannot match inside the word "this".
-    //
-    // OLD:
-    // is
-    //
-    // could incorrectly produce:
-    // th + is
-    //
-    // NEW:
-    // \b(is)\b
-    //
-    // matches only the complete word "is".
-    const regex = new RegExp(
-      `\\b(${escapedWords.join("|")})\\b`,
-      "gi"
+  const mappings = changes
+    .map((item) => ({
+      word: String(item?.word || "").trim(),
+      replacement: String(
+        item?.replacement || ""
+      ).trim(),
+    }))
+    .filter(
+      (item) =>
+        item.word &&
+        item.replacement
     );
 
-    const parts =
-      simplifiedText.split(regex);
+  if (mappings.length === 0) {
+    return simplifiedText;
+  }
 
-    return parts.map(
-      (part, index) => {
-        const mapping =
-          mappings.find(
-            (item) =>
-              item.replacement.toLowerCase() ===
-              part.toLowerCase()
-          );
+  // Longest replacements first
+  mappings.sort(
+    (a, b) =>
+      b.replacement.length -
+      a.replacement.length
+  );
 
-        if (mapping) {
-          return (
-            <span
-              key={index}
-              className="bg-cyan-400/20 text-cyan-200 px-1 rounded"
-              title={`Simpler replacement for "${mapping.word}"`}
-            >
-              {part}
-            </span>
-          );
-        }
+  const escapedReplacements =
+    mappings.map((item) =>
+      item.replacement.replace(
+        /[.*+?^${}()|[\]\\]/g,
+        "\\$&"
+      )
+    );
 
+  const regex = new RegExp(
+    `\\b(${escapedReplacements.join("|")})\\b`,
+    "gi"
+  );
+
+  const parts =
+    simplifiedText.split(regex);
+
+  return parts.map(
+    (part, index) => {
+
+      const mapping =
+        mappings.find(
+          (item) =>
+            item.replacement.toLowerCase() ===
+            part.toLowerCase()
+        );
+
+      if (mapping) {
         return (
-          <span key={index}>
+          <span
+            key={index}
+            className="bg-cyan-400/20 text-cyan-200 px-1 rounded"
+            title={`Simpler replacement for "${mapping.word}"`}
+          >
             {part}
           </span>
         );
       }
-    );
-  };
+
+      return (
+        <span key={index}>
+          {part}
+        </span>
+      );
+    }
+  );
+};
 
   // =====================================================
   // FORMAT NUMBER
@@ -678,186 +740,180 @@ function Simplify() {
   // =====================================================
 
   return (
-    <div className="min-h-screen bg-slate-950 text-white px-5 md:px-8 py-10">
+    <div className="min-h-screen bg-[#020817] text-white px-4 sm:px-6 lg:px-8 py-5">
+      <div className="max-w-[1500px] mx-auto">
 
-      <div className="max-w-[1400px] mx-auto">
+        {/* TOP NAV */}
+        <header className="flex items-center justify-between border-b border-slate-800/70 pb-4 mb-6">
+          <button
+            type="button"
+            onClick={() => navigate("/dashboard")}
+            className="flex items-center gap-3"
+          >
+            
+            <img
+              src="/logo.png"
+              alt="ReadEase AI Logo"
+              className="
+                w-14
+                h-14
+                sm:w-14
+                sm:h-14
+                object-contain
+              "
+            />
+            <span className="text-lg font-bold tracking-tight">
+              ReadEase <span className="text-cyan-400">AI</span>
+            </span>
+          </button>
 
-        {/* =================================================
-            HEADER
-        ================================================= */}
+          <nav className="flex items-center gap-2 sm:gap-5 text-sm">
+            <button
+              type="button"
+              onClick={() => navigate("/dashboard")}
+              className="hidden sm:block text-slate-400 hover:text-white transition"
+            >
+              Dashboard
+            </button>
 
-        <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-6 mb-8">
+            <button
+              type="button"
+              onClick={() => navigate("/history")}
+              className="text-slate-400 hover:text-cyan-400 transition"
+            >
+              History
+            </button>
 
+            <button
+              type="button"
+              onClick={() => navigate("/dashboard")}
+              className="border border-red-500/60 text-red-400 hover:bg-red-500/10 px-4 py-2 rounded-lg transition"
+            >
+              Logout
+            </button>
+          </nav>
+        </header>
+
+        {/* PAGE HEADER */}
+        <section className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-5 mb-6">
           <div>
-
-            <p className="text-cyan-400 text-sm font-semibold uppercase tracking-wider">
+            <p className="text-cyan-400 text-[11px] font-bold uppercase tracking-[0.18em]">
               ReadEase Workspace
             </p>
 
-            <h1 className="text-4xl md:text-5xl font-bold mt-2">
+            <h1 className="text-3xl sm:text-4xl lg:text-[42px] leading-tight font-bold tracking-tight mt-2">
               Simplify Your Text
+              <span className="text-cyan-400"> ✨</span>
             </h1>
 
-            <p className="text-slate-400 mt-3">
-              Transform complex English into clear,
-              easy-to-understand language.
+            <p className="text-slate-400 text-sm sm:text-base mt-2">
+              Transform complex English into clear, easy-to-understand language.
             </p>
-
           </div>
 
-          {/* READING LEVEL */}
-
-          <div className="w-full lg:w-48">
-
+          <div className="w-full lg:w-44">
             <label
               htmlFor="reading-level"
-              className="block text-slate-500 text-xs uppercase tracking-wider mb-2"
+              className="block text-slate-500 text-[10px] uppercase tracking-[0.16em] mb-2"
             >
               Reading Level
             </label>
 
             <div className="relative">
-
               <select
                 id="reading-level"
                 value={level}
-                onChange={(e) =>
-                  setLevel(
-                    e.target.value
-                  )
-                }
-                className="appearance-none w-full bg-slate-900 border border-slate-700 text-white px-4 py-3 pr-10 rounded-xl outline-none focus:border-cyan-400 cursor-pointer"
+                onChange={(e) => setLevel(e.target.value)}
+                className="appearance-none w-full bg-slate-900/90 border border-slate-700 hover:border-cyan-400/50 text-white px-4 py-2.5 pr-10 rounded-xl outline-none focus:border-cyan-400 transition cursor-pointer text-sm"
               >
-
-                <option value="Beginner">
-                  Beginner
-                </option>
-
-                <option value="Intermediate">
-                  Intermediate
-                </option>
-
-                <option value="Advanced">
-                  Advanced
-                </option>
-
+                <option value="Beginner">Beginner</option>
+                <option value="Intermediate">Intermediate</option>
+                <option value="Advanced">Advanced</option>
               </select>
 
-              <span className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-cyan-400">
-                ⌄
+              <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-cyan-400 text-xs">
+                ▼
               </span>
-
             </div>
-
           </div>
+        </section>
 
-        </div>
-
-        {/* =================================================
-            UPLOAD
-        ================================================= */}
-
-        <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-5 mb-8">
-
+        {/* UPLOAD */}
+        <section className="bg-slate-900/70 border border-slate-800 hover:border-cyan-400/20 rounded-2xl p-4 sm:p-5 mb-6 transition">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
 
-            <div className="flex items-center gap-4">
-
-              <div className="w-11 h-11 rounded-xl bg-cyan-400/10 border border-cyan-400/30 flex items-center justify-center text-xl">
-                📄
+            <div className="flex items-center gap-3">
+              <div className="w-11 h-11 rounded-xl bg-cyan-400/10 border border-cyan-400/25 flex items-center justify-center text-cyan-300">
+                <UIIcon name="file" size={20} />
               </div>
 
               <div>
-
-                <p className="font-semibold">
+                <p className="font-semibold text-sm sm:text-base">
                   Upload a document
                 </p>
-
-                <p className="text-slate-500 text-sm mt-1">
+                <p className="text-slate-500 text-xs sm:text-sm mt-1">
                   PDF, DOCX or TXT
                 </p>
 
                 {selectedFile && (
-                  <p className="text-cyan-400 text-xs mt-1">
+                  <p className="text-cyan-400 text-[11px] mt-1 truncate max-w-[280px]">
                     {selectedFile.name}
                   </p>
                 )}
-
               </div>
-
             </div>
 
             <label
               htmlFor="document-upload"
-              className="cursor-pointer bg-slate-800 border border-slate-700 px-5 py-3 rounded-xl font-semibold hover:border-cyan-400 hover:text-cyan-400 transition text-center"
+              className="cursor-pointer bg-slate-800/90 border border-slate-700 px-5 py-2.5 rounded-xl font-semibold text-sm hover:border-cyan-400 hover:text-cyan-400 transition text-center"
             >
-              📎 Choose File
+              <span className="inline-flex items-center gap-2">
+                <UIIcon name="clip" size={16} />
+                Choose File
+              </span>
             </label>
 
             <input
               id="document-upload"
               type="file"
               accept=".pdf,.docx,.txt"
-              onChange={
-                handleFileChange
-              }
+              onChange={handleFileChange}
               className="hidden"
             />
-
           </div>
+        </section>
 
-        </div>
-
-        {/* =================================================
-            TEXT EDITORS
-        ================================================= */}
-
-        <div className="grid lg:grid-cols-2 gap-6">
+        {/* TEXT PANELS */}
+        <section className="grid lg:grid-cols-2 gap-5">
 
           {/* ORIGINAL */}
-
           <div>
-
-            <div className="flex items-center justify-between mb-3">
-
-              <div className="flex items-center gap-3">
-
-                <span className="w-1.5 h-6 bg-yellow-400 rounded-full"></span>
-
-                <h2 className="font-bold text-lg">
+            <div className="flex items-center justify-between mb-2.5">
+              <div className="flex items-center gap-2.5">
+                <span className="w-1 h-5 bg-yellow-400 rounded-full" />
+                <h2 className="font-bold text-base sm:text-lg">
                   Original Text
                 </h2>
-
               </div>
 
-              <span className="text-xs text-yellow-300 bg-yellow-400/10 border border-yellow-400/20 px-3 py-1 rounded-full">
+              <span className="text-[10px] sm:text-xs text-yellow-300 bg-yellow-400/10 border border-yellow-400/20 px-2.5 py-1 rounded-full">
                 Difficult words
               </span>
-
             </div>
 
-            <div className="relative bg-slate-900 border border-slate-700 rounded-2xl min-h-[360px]">
+            <div className="relative bg-slate-900/75 border border-slate-700 rounded-2xl h-[300px] sm:h-[330px] overflow-hidden focus-within:border-yellow-400/40 transition">
 
-              <div className="absolute top-4 right-4 z-10">
-
-                <button
-                  type="button"
-                  onClick={() =>
-                    speakText(text)
-                  }
-                  disabled={!text}
-                  title="Listen to original text"
-                  className="w-10 h-10 rounded-xl bg-slate-800 border border-slate-700 text-white flex items-center justify-center hover:border-cyan-400 hover:text-cyan-400 transition disabled:opacity-40"
-                >
-                  🔊
-                </button>
-
-              </div>
-
-              <div
-                className="absolute inset-0 p-5 pr-16 overflow-y-auto text-[15px] leading-7 whitespace-pre-wrap"
+              <button
+                type="button"
+                onClick={() => speakText(text)}
+                disabled={!text}
+                title="Listen to original text"
+                className="absolute top-3 right-3 z-20 w-9 h-9 rounded-lg bg-slate-800/90 border border-slate-700 text-slate-300 flex items-center justify-center hover:border-cyan-400 hover:text-cyan-400 transition disabled:opacity-30"
               >
+                <UIIcon name="volume" size={17} />
+              </button>
 
+              <div className="absolute inset-0 p-4 pr-14 overflow-y-auto text-sm leading-6 whitespace-pre-wrap pointer-events-none">
                 {text ? (
                   highlightOriginalText()
                 ) : (
@@ -865,75 +921,50 @@ function Simplify() {
                     Enter your text here...
                   </span>
                 )}
-
               </div>
 
               <textarea
                 value={text}
-                onChange={(e) =>
-                  setText(
-                    e.target.value
-                  )
-                }
-                className="absolute inset-0 w-full h-full resize-none p-5 pr-16 bg-transparent text-transparent caret-white outline-none leading-7 text-[15px]"
+                onChange={(e) => setText(e.target.value)}
+                className="absolute inset-0 w-full h-full resize-none p-4 pr-14 bg-transparent text-transparent caret-white outline-none leading-6 text-sm selection:bg-cyan-400/20"
                 spellCheck="false"
                 aria-label="Original text"
               />
-
             </div>
 
-            <p className="text-slate-600 text-xs mt-2">
+            <p className="text-slate-600 text-[11px] mt-1.5">
               Difficult words are highlighted automatically.
             </p>
-
           </div>
 
           {/* SIMPLIFIED */}
-
           <div>
-
-            <div className="flex items-center justify-between mb-3">
-
-              <div className="flex items-center gap-3">
-
-                <span className="w-1.5 h-6 bg-cyan-400 rounded-full"></span>
-
-                <h2 className="font-bold text-lg">
+            <div className="flex items-center justify-between mb-2.5">
+              <div className="flex items-center gap-2.5">
+                <span className="w-1 h-5 bg-cyan-400 rounded-full" />
+                <h2 className="font-bold text-base sm:text-lg">
                   Simplified Text
                 </h2>
-
               </div>
 
-              <span className="text-xs text-cyan-300 bg-cyan-400/10 border border-cyan-400/20 px-3 py-1 rounded-full">
+              <span className="text-[10px] sm:text-xs text-cyan-300 bg-cyan-400/10 border border-cyan-400/20 px-2.5 py-1 rounded-full">
                 Simpler words
               </span>
-
             </div>
 
-            <div className="relative bg-slate-900 border border-slate-700 rounded-2xl min-h-[360px]">
+            <div className="relative bg-slate-900/75 border border-slate-700 rounded-2xl h-[300px] sm:h-[330px] overflow-hidden focus-within:border-cyan-400/40 transition">
 
-              <div className="absolute top-4 right-4 z-10">
+              <button
+                type="button"
+                onClick={() => speakText(simplifiedText)}
+                disabled={!simplifiedText}
+                title="Listen to simplified text"
+                className="absolute top-3 right-3 z-20 w-9 h-9 rounded-lg bg-slate-800/90 border border-slate-700 text-slate-300 flex items-center justify-center hover:border-cyan-400 hover:text-cyan-400 transition disabled:opacity-30"
+              >
+                <UIIcon name="volume" size={17} />
+              </button>
 
-                <button
-                  type="button"
-                  onClick={() =>
-                    speakText(
-                      simplifiedText
-                    )
-                  }
-                  disabled={
-                    !simplifiedText
-                  }
-                  title="Listen to simplified text"
-                  className="w-10 h-10 rounded-xl bg-slate-800 border border-slate-700 text-white flex items-center justify-center hover:border-cyan-400 hover:text-cyan-400 transition disabled:opacity-40"
-                >
-                  🔊
-                </button>
-
-              </div>
-
-              <div className="p-5 pr-16 text-[15px] leading-7 whitespace-pre-wrap min-h-[360px] overflow-y-auto">
-
+              <div className="p-4 pr-14 text-sm leading-6 whitespace-pre-wrap h-full overflow-y-auto">
                 {simplifiedText ? (
                   highlightSimplifiedText()
                 ) : (
@@ -941,337 +972,247 @@ function Simplify() {
                     Your simplified text will appear here...
                   </span>
                 )}
-
               </div>
-
             </div>
-
-            <p className="text-slate-600 text-xs mt-2">
-              Simpler replacements are highlighted after simplification.
-            </p>
-
           </div>
+        </section>
 
-        </div>
-
-        {/* =================================================
-            ACTION BUTTONS
-        ================================================= */}
-
-        <div className="flex flex-col sm:flex-row gap-3 mt-6">
-
+        {/* ACTIONS */}
+        <section className="flex flex-col sm:flex-row gap-2.5 mt-5">
           <button
+            type="button"
             onClick={handleSimplify}
             disabled={loading}
-            className="flex-1 bg-cyan-400 text-black py-3.5 rounded-xl font-semibold hover:bg-cyan-300 transition disabled:opacity-60"
+            className="flex-1 bg-gradient-to-r from-cyan-400 to-cyan-500 text-slate-950 py-3 rounded-xl font-bold text-sm hover:from-cyan-300 hover:to-cyan-400 transition disabled:opacity-60 disabled:cursor-not-allowed shadow-lg shadow-cyan-500/10"
           >
-            {loading
-              ? "✨ Simplifying..."
-              : "✨ Simplify Text"}
+            {loading ? (
+              <span className="inline-flex items-center gap-2">
+                <span className="w-4 h-4 border-2 border-slate-950/30 border-t-slate-950 rounded-full animate-spin" />
+                Simplifying...
+              </span>
+            ) : (
+              <span className="inline-flex items-center justify-center gap-2">
+                <UIIcon name="sparkle" size={16} />
+                Simplify Text
+              </span>
+            )}
           </button>
 
           <button
+            type="button"
             onClick={handleClear}
-            className="sm:w-32 border border-slate-700 text-white py-3.5 rounded-xl hover:bg-slate-900 transition"
+            className="sm:w-28 border border-slate-700 text-slate-300 py-3 rounded-xl hover:bg-slate-900 hover:border-slate-600 transition text-sm font-semibold"
           >
-            Clear
+            <span className="inline-flex items-center justify-center gap-2">
+              <UIIcon name="trash" size={15} />
+              Clear
+            </span>
           </button>
+        </section>
 
-        </div>
-
-        {/* =================================================
-            ERROR
-        ================================================= */}
-
+        {/* ERROR */}
         {error && (
-          <div className="mt-5 bg-red-500/10 border border-red-500/30 text-red-400 rounded-xl px-4 py-3 text-sm">
+          <div className="mt-4 bg-red-500/10 border border-red-500/30 text-red-400 rounded-xl px-4 py-3 text-sm">
             {error}
           </div>
         )}
 
-        {/* =================================================
-            ANALYSIS / SCORES
-        ================================================= */}
+        {/* ANALYSIS */}
+        <section className="grid lg:grid-cols-2 gap-5 mt-7">
 
-        <div className="grid lg:grid-cols-2 gap-5 mt-8">
-
-          {/* READABILITY */}
-
-          <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-6">
-
+          <div className="bg-slate-900/70 border border-slate-800 rounded-2xl p-5 sm:p-6">
             <div className="flex items-center justify-between">
-
               <div>
-
-                <p className="text-cyan-400 text-xs font-semibold uppercase tracking-wider">
+                <p className="text-cyan-400 text-[10px] font-bold uppercase tracking-[0.16em]">
                   Analysis
                 </p>
-
-                <h2 className="text-xl font-bold mt-1">
+                <h2 className="text-lg sm:text-xl font-bold mt-1">
                   Readability Score
                 </h2>
-
               </div>
 
-              <span className="text-2xl">
-                📊
-              </span>
-
+              <div className="w-9 h-9 rounded-lg bg-cyan-400/10 border border-cyan-400/15 flex items-center justify-center text-cyan-400">
+                <UIIcon name="chart" size={19} />
+              </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-3 mt-5">
-
-              <div className="bg-slate-950/70 rounded-xl p-4">
-
-                <p className="text-slate-500 text-xs">
-                  Before
+            <div className="grid grid-cols-2 gap-3 mt-4">
+              <div className="bg-slate-950/70 rounded-xl p-4 border border-slate-800/70">
+                <p className="text-slate-500 text-[11px]">Before</p>
+                <p className="text-2xl sm:text-3xl font-bold mt-1.5">
+                  {formatNumber(beforeReadability)}
                 </p>
-
-                <p className="text-3xl font-bold mt-2">
-                  {formatNumber(
-                    beforeReadability
-                  )}
-                </p>
-
-                <p className="text-slate-600 text-xs mt-1">
+                <p className="text-slate-600 text-[11px] mt-1">
                   Reading Ease
                 </p>
-
               </div>
 
-              <div className="bg-cyan-400/[0.05] border border-cyan-400/10 rounded-xl p-4">
-
-                <p className="text-cyan-400 text-xs">
-                  After
+              <div className="bg-cyan-400/[0.04] border border-cyan-400/15 rounded-xl p-4">
+                <p className="text-cyan-400 text-[11px]">After</p>
+                <p className="text-2xl sm:text-3xl font-bold text-cyan-400 mt-1.5">
+                  {formatNumber(afterReadability)}
                 </p>
-
-                <p className="text-3xl font-bold text-cyan-400 mt-2">
-                  {formatNumber(
-                    afterReadability
-                  )}
-                </p>
-
-                <p className="text-slate-600 text-xs mt-1">
+                <p className="text-slate-600 text-[11px] mt-1">
                   Reading Ease
                 </p>
-
               </div>
-
             </div>
-
           </div>
 
-          {/* IMPROVEMENT */}
-
-          <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-6">
-
+          <div className="bg-slate-900/70 border border-slate-800 rounded-2xl p-5 sm:p-6">
             <div className="flex items-center justify-between">
-
               <div>
-
-                <p className="text-cyan-400 text-xs font-semibold uppercase tracking-wider">
+                <p className="text-cyan-400 text-[10px] font-bold uppercase tracking-[0.16em]">
                   Results
                 </p>
-
-                <h2 className="text-xl font-bold mt-1">
+                <h2 className="text-lg sm:text-xl font-bold mt-1">
                   Improvement
                 </h2>
-
               </div>
 
-              <span className="text-2xl">
-                📈
-              </span>
-
+              <div className="w-9 h-9 rounded-lg bg-cyan-400/10 border border-cyan-400/15 flex items-center justify-center text-cyan-400">
+                <UIIcon name="chart" size={19} />
+              </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-3 mt-5">
-
-              <div className="bg-slate-950/70 rounded-xl p-4">
-
-                <p className="text-slate-500 text-xs">
+            <div className="grid grid-cols-2 gap-3 mt-4">
+              <div className="bg-slate-950/70 rounded-xl p-4 border border-slate-800/70">
+                <p className="text-slate-500 text-[11px]">
                   Reading Improvement
                 </p>
-
-                <p className="text-3xl font-bold text-cyan-400 mt-2">
+                <p className="text-2xl sm:text-3xl font-bold text-cyan-400 mt-1.5">
                   {improvementDisplay}
                 </p>
-
               </div>
 
-              <div className="bg-slate-950/70 rounded-xl p-4">
-
-                <p className="text-slate-500 text-xs">
+              <div className="bg-slate-950/70 rounded-xl p-4 border border-slate-800/70">
+                <p className="text-slate-500 text-[11px]">
                   Grade Level
                 </p>
-
-                <p className="text-2xl font-bold mt-2">
-
-                  {beforeGrade !== "--" &&
-                  afterGrade !== "--"
-                    ? `${formatNumber(
-                        beforeGrade
-                      )} → ${formatNumber(
-                        afterGrade
-                      )}`
+                <p className="text-xl sm:text-2xl font-bold mt-2">
+                  {beforeGrade !== "--" && afterGrade !== "--"
+                    ? `${formatNumber(beforeGrade)} → ${formatNumber(afterGrade)}`
                     : "--"}
-
                 </p>
-
               </div>
-
             </div>
-
           </div>
+        </section>
 
-        </div>
-
-        {/* =================================================
-            EXTRA METRICS
-        ================================================= */}
-
-        <div className="grid sm:grid-cols-2 gap-5 mt-5">
-
-          {/* READING TIME */}
-
-          <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-5 flex items-center justify-between">
-
+        {/* EXTRA METRICS */}
+        <section className="grid sm:grid-cols-2 gap-5 mt-5">
+          <div className="bg-slate-900/70 border border-slate-800 rounded-2xl p-5 flex items-center justify-between">
             <div>
-
-              <p className="text-slate-500 text-xs uppercase tracking-wider">
+              <p className="text-slate-500 text-[10px] uppercase tracking-[0.16em]">
                 Reading Time
               </p>
-
-              <p className="text-2xl font-bold mt-2">
+              <p className="text-2xl font-bold mt-1.5">
                 {readingTime}
               </p>
-
             </div>
 
-            <span className="text-2xl">
-              ⏱️
-            </span>
-
+            <div className="w-9 h-9 rounded-lg bg-cyan-400/10 border border-cyan-400/15 flex items-center justify-center text-cyan-400">
+              <UIIcon name="clock" size={19} />
+            </div>
           </div>
 
-          {/* GRAMMAR */}
-
-          <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-5 flex items-center justify-between">
-
+          <div className="bg-slate-900/70 border border-slate-800 rounded-2xl p-5 flex items-center justify-between">
             <div>
-
-              <p className="text-slate-500 text-xs uppercase tracking-wider">
+              <p className="text-slate-500 text-[10px] uppercase tracking-[0.16em]">
                 Grammar Score
               </p>
 
-              <p className="text-2xl font-bold mt-2">
-
+              <p className="text-2xl font-bold mt-1.5">
                 {grammarScore === "--"
                   ? "--"
-                  : typeof grammarScore ===
-                      "string" &&
+                  : typeof grammarScore === "string" &&
                     grammarScore.includes("%")
-                    ? grammarScore
-                    : `${grammarScore}%`}
-
+                  ? grammarScore
+                  : `${grammarScore}%`}
               </p>
-
             </div>
 
-            <span className="text-2xl">
-              ✓
-            </span>
+            <div className="w-9 h-9 rounded-lg bg-cyan-400/10 border border-cyan-400/15 flex items-center justify-center text-cyan-400">
+              <UIIcon name="check" size={19} />
+            </div>
+          </div>
+        </section>
 
+        {/* VOCABULARY */}
+        <section className="mt-5 bg-slate-900/70 border border-slate-800 rounded-2xl p-5 sm:p-6">
+          <div className="flex items-end justify-between gap-4 mb-5">
+            <div>
+              <p className="text-yellow-400 text-[10px] font-bold uppercase tracking-[0.16em]">
+                Vocabulary
+              </p>
+              <h2 className="text-xl sm:text-2xl font-bold mt-1">
+                Difficult Words
+              </h2>
+            </div>
+
+            <div className="text-slate-500 text-xs">
+              {difficultWords.length} words
+            </div>
           </div>
 
-        </div>
-
-        {/* =================================================
-            DIFFICULT WORDS
-        ================================================= */}
-
-        {difficultWords.length > 0 && (
-          <div className="mt-8 bg-slate-900/80 border border-slate-800 rounded-2xl p-6">
-
-            <div className="flex items-center justify-between mb-5">
-
-              <div>
-
-                <p className="text-yellow-400 text-xs font-semibold uppercase tracking-wider">
-                  Vocabulary
-                </p>
-
-                <h2 className="text-xl font-bold mt-1">
-                  Difficult Words
-                </h2>
-
-              </div>
-
-              <span className="text-slate-500 text-sm">
-                {difficultWords.length} words
-              </span>
-
+          {difficultWords.length === 0 ? (
+            <div className="border border-dashed border-slate-800 rounded-xl py-8 text-center text-slate-600 text-sm">
+              Difficult words will appear here after simplification.
             </div>
+          ) : (
+            <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
+              {difficultWords.map((item, index) => {
+                const word =
+                  typeof item === "string"
+                    ? item
+                    : item?.word || "";
 
-            <div className="grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+                const meaning =
+                  typeof item === "object"
+                    ? item?.meaning || "Meaning not available."
+                    : "Meaning not available.";
 
-              {difficultWords.map(
-                (item, index) => (
+                return (
                   <div
-                    key={index}
-                    className="bg-slate-950/70 border border-slate-800 rounded-xl p-4"
+                    className="bg-slate-950/75 border border-slate-800 rounded-xl p-4 hover:border-yellow-400/25 transition"
+                    key={`${word}-${index}`}
                   >
+                    <div className="text-yellow-300 font-bold text-sm break-words">
+                      {word}
+                    </div>
 
-                    <p className="text-yellow-300 font-semibold">
-                      {item.word}
-                    </p>
-
-                    {item.replacement && (
-                      <p className="text-slate-500 text-sm mt-2">
-                        →{" "}
-                        <span className="text-cyan-400">
-                          {item.replacement}
-                        </span>
-                      </p>
-                    )}
-
+                    <div className="text-cyan-300 text-xs mt-2 leading-5">
+                      → {meaning}
+                    </div>
                   </div>
-                )
-              )}
-
+                );
+              })}
             </div>
+          )}
+        </section>
 
-          </div>
-        )}
-
-        {/* =================================================
-            BOTTOM NAVIGATION
-        ================================================= */}
-
-        <div className="flex justify-between items-center mt-8 pb-10">
-
+        {/* FOOTER NAV */}
+        <footer className="flex justify-between items-center mt-7 pb-8">
           <button
-            onClick={() =>
-              navigate("/dashboard")
-            }
-            className="text-slate-500 hover:text-cyan-400 transition text-sm"
+            type="button"
+            onClick={() => navigate("/dashboard")}
+            className="inline-flex items-center gap-1.5 text-slate-500 hover:text-cyan-400 transition text-sm"
           >
-            ← Back to Dashboard
+            <UIIcon name="back" size={15} />
+            Back to Dashboard
           </button>
 
           <button
-            onClick={() =>
-              navigate("/history")
-            }
-            className="text-slate-500 hover:text-cyan-400 transition text-sm"
+            type="button"
+            onClick={() => navigate("/history")}
+            className="inline-flex items-center gap-1.5 text-slate-500 hover:text-cyan-400 transition text-sm"
           >
-            View History →
+            View History
+            <UIIcon name="next" size={15} />
           </button>
-
-        </div>
+        </footer>
 
       </div>
-
     </div>
   );
 }
