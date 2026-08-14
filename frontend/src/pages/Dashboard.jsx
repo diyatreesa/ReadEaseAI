@@ -896,488 +896,471 @@ function Dashboard() {
         >
 
 
-          {/* =================================================
-              SIMPLIFY CARD
-          ================================================= */}
+{/* =================================================
+    SIMPLIFY CARD
+================================================= */}
 
-          <div
+<div
+  className="
+    group
+    relative
+    overflow-hidden
+    rounded-3xl
+    border
+    border-cyan-400/25
+    bg-gradient-to-br
+    from-slate-900
+    via-slate-900
+    to-cyan-950/20
+    p-5
+    sm:p-6
+    transition-all
+    duration-300
+    hover:border-cyan-400/60
+    hover:-translate-y-1
+    hover:shadow-[0_20px_60px_rgba(34,211,238,0.08)]
+  "
+>
+
+  {/* Subtle background glow */}
+
+  <div
+    className="
+      absolute
+      -top-24
+      -right-24
+      w-64
+      h-64
+      rounded-full
+      bg-cyan-400/10
+      blur-3xl
+      group-hover:bg-cyan-400/15
+      transition
+    "
+  />
+
+  <div className="relative z-10">
+
+    {/* TOP CONTENT */}
+
+    <div
+      className="
+        flex
+        flex-col
+        sm:flex-row
+        gap-5
+        items-center
+        sm:items-start
+      "
+    >
+
+      {/* SIMPLIFY ICON */}
+
+      <div
+        className="
+          shrink-0
+          w-24
+          h-24
+          flex
+          items-center
+          justify-center
+        "
+      >
+
+        <img
+          src="/spark.png"
+          alt="AI text simplification"
+          className="
+            w-20
+            h-20
+            object-contain
+            mix-blend-screen
+            transition-all
+            duration-500
+            group-hover:scale-110
+            group-hover:drop-shadow-[0_0_15px_rgba(34,211,238,0.35)]
+          "
+        />
+
+      </div>
+
+
+      {/* TEXT */}
+
+      <div
+        className="
+          flex-1
+          text-center
+          sm:text-left
+        "
+      >
+
+        {/* BADGE */}
+
+        <span
+          className="
+            inline-flex
+            items-center
+            rounded-full
+            border
+            border-cyan-400/25
+            bg-cyan-400/10
+            px-3
+            py-1
+            text-[11px]
+            font-medium
+            text-cyan-300
+          "
+        >
+          AI Simplification
+        </span>
+
+
+        {/* TITLE */}
+
+        <h2
+          className="
+            text-2xl
+            font-bold
+            text-white
+            mt-3
+          "
+        >
+          Simplify New Text
+        </h2>
+
+
+        {/* DESCRIPTION */}
+
+        <p
+          className="
+            text-slate-400
+            text-sm
+            leading-relaxed
+            mt-2
+            max-w-xl
+          "
+        >
+          Transform complex English into clear,
+          easy-to-understand language while preserving
+          the original meaning.
+        </p>
+
+      </div>
+
+    </div>
+
+
+    {/* DIVIDER */}
+
+    <div
+      className="
+        border-t
+        border-slate-800
+        mt-6
+        pt-5
+      "
+    >
+
+      <div
+        className="
+          flex
+          items-center
+          justify-between
+          gap-4
+        "
+      >
+
+        {/* FOOTER TEXT */}
+
+        <div>
+
+          <p
             className="
-              group
-              relative
-              overflow-hidden
-              rounded-3xl
-              border
-              border-cyan-400/25
-              bg-gradient-to-br
-              from-slate-900
-              via-slate-900
-              to-cyan-950/20
-              p-5
-              sm:p-6
-              transition-all
-              duration-300
-              hover:border-cyan-400/60
-              hover:-translate-y-1
-              hover:shadow-[0_20px_60px_rgba(34,211,238,0.08)]
+              text-xs
+              font-medium
+              text-cyan-400
             "
           >
+            Start a new analysis
+          </p>
 
-            {/* Glow */}
-
-            <div
-              className="
-                absolute
-                -top-24
-                -right-24
-                w-64
-                h-64
-                rounded-full
-                bg-cyan-400/10
-                blur-3xl
-                group-hover:bg-cyan-400/15
-                transition
-              "
-            />
-
-
-            <div
-              className="
-                relative
-                z-10
-              "
-            >
-
-              {/* TOP CONTENT */}
-
-              <div
-                className="
-                  flex
-                  flex-col
-                  sm:flex-row
-                  gap-5
-                  items-center
-                  sm:items-start
-                "
-              >
-
-
-                {/* IMAGE */}
-
-                <div
-                  className="
-                    shrink-0
-                    w-32
-                    h-32
-                    rounded-2xl
-                    bg-slate-950/70
-                    border
-                    border-cyan-400/20
-                    flex
-                    items-center
-                    justify-center
-                    overflow-hidden
-                    group-hover:border-cyan-400/40
-                    transition
-                  "
-                >
-
-                  <img
-                    src="/sim.png"
-                    alt="AI text simplification"
-                    className="
-                      w-full
-                      h-full
-                      object-contain
-                      p-2
-                      transition-transform
-                      duration-500
-                      group-hover:scale-105
-                    "
-                  />
-
-                </div>
-
-
-
-                {/* TEXT */}
-
-                <div
-                  className="
-                    flex-1
-                    text-center
-                    sm:text-left
-                  "
-                >
-
-                  {/* BADGE */}
-
-                  <span
-                    className="
-                      inline-flex
-                      items-center
-                      rounded-full
-                      border
-                      border-cyan-400/25
-                      bg-cyan-400/10
-                      px-3
-                      py-1
-                      text-[11px]
-                      font-medium
-                      text-cyan-300
-                    "
-                  >
-                    AI Simplification
-                  </span>
-
-
-                  <h2
-                    className="
-                      text-2xl
-                      font-bold
-                      text-white
-                      mt-3
-                    "
-                  >
-                    Simplify New Text
-                  </h2>
-
-
-                  <p
-                    className="
-                      text-slate-400
-                      text-sm
-                      leading-relaxed
-                      mt-2
-                    "
-                  >
-                    Transform complex English into
-                    clear, easy-to-understand language
-                    while preserving the original meaning.
-                  </p>
-
-                </div>
-
-              </div>
-
-
-
-              {/* DIVIDER */}
-
-              <div
-                className="
-                  border-t
-                  border-slate-800
-                  mt-6
-                  pt-5
-                "
-              >
-
-
-                <div
-                  className="
-                    flex
-                    items-center
-                    justify-between
-                    gap-4
-                  "
-                >
-
-                  <div>
-
-                    <p
-                      className="
-                        text-xs
-                        font-medium
-                        text-cyan-400
-                      "
-                    >
-                      Start a new analysis
-                    </p>
-
-                    <p
-                      className="
-                        text-xs
-                        text-slate-500
-                        mt-1
-                      "
-                    >
-                      Improve readability instantly
-                    </p>
-
-                  </div>
-
-
-                  <button
-                    onClick={() =>
-                      navigate("/simplify")
-                    }
-                    className="
-                      shrink-0
-                      bg-cyan-400
-                      text-slate-950
-                      px-5
-                      py-2.5
-                      rounded-xl
-                      text-sm
-                      font-semibold
-                      hover:bg-cyan-300
-                      hover:shadow-[0_0_25px_rgba(34,211,238,0.25)]
-                      transition-all
-                    "
-                  >
-                    Start →
-                  </button>
-
-                </div>
-
-              </div>
-
-            </div>
-
-          </div>
-
-
-
-          {/* =================================================
-              HISTORY CARD
-          ================================================= */}
-
-          <div
+          <p
             className="
-              group
-              relative
-              overflow-hidden
-              rounded-3xl
-              border
-              border-blue-400/25
-              bg-gradient-to-br
-              from-slate-900
-              via-slate-900
-              to-blue-950/20
-              p-5
-              sm:p-6
-              transition-all
-              duration-300
-              hover:border-blue-400/60
-              hover:-translate-y-1
-              hover:shadow-[0_20px_60px_rgba(59,130,246,0.08)]
+              text-xs
+              text-slate-500
+              mt-1
             "
           >
+            Improve readability instantly
+          </p>
 
-            {/* Glow */}
-
-            <div
-              className="
-                absolute
-                -top-24
-                -right-24
-                w-64
-                h-64
-                rounded-full
-                bg-blue-500/10
-                blur-3xl
-                group-hover:bg-blue-500/15
-                transition
-              "
-            />
+        </div>
 
 
-            <div
-              className="
-                relative
-                z-10
-              "
-            >
+        {/* BUTTON */}
 
-              {/* TOP CONTENT */}
+        <button
+          onClick={() => navigate("/simplify")}
+          className="
+            shrink-0
+            bg-cyan-400
+            text-slate-950
+            px-5
+            py-2.5
+            rounded-xl
+            text-sm
+            font-semibold
+            hover:bg-cyan-300
+            hover:shadow-[0_0_25px_rgba(34,211,238,0.25)]
+            transition-all
+          "
+        >
+          Simplify Text →
+        </button>
 
-              <div
-                className="
-                  flex
-                  flex-col
-                  sm:flex-row
-                  gap-5
-                  items-center
-                  sm:items-start
-                "
-              >
+      </div>
 
+    </div>
 
-                {/* IMAGE */}
+  </div>
 
-                <div
-                  className="
-                    shrink-0
-                    w-32
-                    h-32
-                    rounded-2xl
-                    bg-slate-950/70
-                    border
-                    border-blue-400/20
-                    flex
-                    items-center
-                    justify-center
-                    overflow-hidden
-                    group-hover:border-blue-400/40
-                    transition
-                  "
-                >
-
-                  <img
-                    src="/his.png"
-                    alt="ReadEase history"
-                    className="
-                      w-full
-                      h-full
-                      object-contain
-                      p-2
-                      transition-transform
-                      duration-500
-                      group-hover:scale-105
-                    "
-                  />
-
-                </div>
+</div>
 
 
 
-                {/* TEXT */}
+{/* =================================================
+    HISTORY CARD
+================================================= */}
 
-                <div
-                  className="
-                    flex-1
-                    text-center
-                    sm:text-left
-                  "
-                >
+<div
+  className="
+    group
+    relative
+    overflow-hidden
+    rounded-3xl
+    border
+    border-blue-400/25
+    bg-gradient-to-br
+    from-slate-900
+    via-slate-900
+    to-blue-950/20
+    p-5
+    sm:p-6
+    transition-all
+    duration-300
+    hover:border-blue-400/60
+    hover:-translate-y-1
+    hover:shadow-[0_20px_60px_rgba(59,130,246,0.08)]
+  "
+>
 
-                  {/* BADGE */}
+  {/* Subtle background glow */}
 
-                  <span
-                    className="
-                      inline-flex
-                      items-center
-                      rounded-full
-                      border
-                      border-blue-400/25
-                      bg-blue-400/10
-                      px-3
-                      py-1
-                      text-[11px]
-                      font-medium
-                      text-blue-300
-                    "
-                  >
-                    Saved Analyses
-                  </span>
+  <div
+    className="
+      absolute
+      -top-24
+      -right-24
+      w-64
+      h-64
+      rounded-full
+      bg-blue-500/10
+      blur-3xl
+      group-hover:bg-blue-500/15
+      transition
+    "
+  />
 
+  <div className="relative z-10">
 
-                  <h2
-                    className="
-                      text-2xl
-                      font-bold
-                      text-white
-                      mt-3
-                    "
-                  >
-                    Your History
-                  </h2>
+    {/* TOP CONTENT */}
 
+    <div
+      className="
+        flex
+        flex-col
+        sm:flex-row
+        gap-5
+        items-center
+        sm:items-start
+      "
+    >
 
-                  <p
-                    className="
-                      text-slate-400
-                      text-sm
-                      leading-relaxed
-                      mt-2
-                    "
-                  >
-                    Review your previous simplifications,
-                    compare readability improvements,
-                    and revisit your saved texts.
-                  </p>
+      {/* HISTORY ICON */}
 
-                </div>
+      <div
+        className="
+          shrink-0
+          w-24
+          h-24
+          flex
+          items-center
+          justify-center
+        "
+      >
 
-              </div>
+        <img
+          src="/history.png"
+          alt="ReadEase history"
+          className="
+            w-20
+            h-20
+            object-contain
+            mix-blend-screen
+            transition-all
+            duration-500
+            group-hover:scale-110
+            group-hover:drop-shadow-[0_0_15px_rgba(59,130,246,0.35)]
+          "
+        />
 
-
-
-              {/* DIVIDER */}
-
-              <div
-                className="
-                  border-t
-                  border-slate-800
-                  mt-6
-                  pt-5
-                "
-              >
-
-                <div
-                  className="
-                    flex
-                    items-center
-                    justify-between
-                    gap-4
-                  "
-                >
-
-                  <div>
-
-                    <p
-                      className="
-                        text-xs
-                        font-medium
-                        text-blue-400
-                      "
-                    >
-                      Your reading journey
-                    </p>
-
-                    <p
-                      className="
-                        text-xs
-                        text-slate-500
-                        mt-1
-                      "
-                    >
-                      Review your previous results
-                    </p>
-
-                  </div>
+      </div>
 
 
-                  <button
-                    onClick={() =>
-                      navigate("/history")
-                    }
-                    className="
-                      shrink-0
-                      border
-                      border-blue-400/60
-                      text-blue-300
-                      px-5
-                      py-2.5
-                      rounded-xl
-                      text-sm
-                      font-semibold
-                      hover:bg-blue-400
-                      hover:text-slate-950
-                      hover:border-blue-400
-                      transition-all
-                    "
-                  >
-                    View →
-                  </button>
+      {/* TEXT */}
 
-                </div>
+      <div
+        className="
+          flex-1
+          text-center
+          sm:text-left
+        "
+      >
 
-              </div>
+        {/* BADGE */}
 
-            </div>
+        <span
+          className="
+            inline-flex
+            items-center
+            rounded-full
+            border
+            border-blue-400/25
+            bg-blue-400/10
+            px-3
+            py-1
+            text-[11px]
+            font-medium
+            text-blue-300
+          "
+        >
+          Saved Analyses
+        </span>
 
-          </div>
+
+        {/* TITLE */}
+
+        <h2
+          className="
+            text-2xl
+            font-bold
+            text-white
+            mt-3
+          "
+        >
+          Your History
+        </h2>
+
+
+        {/* DESCRIPTION */}
+
+        <p
+          className="
+            text-slate-400
+            text-sm
+            leading-relaxed
+            mt-2
+            max-w-xl
+          "
+        >
+          Review your previous simplifications,
+          compare readability improvements, and
+          revisit your saved texts.
+        </p>
+
+      </div>
+
+    </div>
+
+
+    {/* DIVIDER */}
+
+    <div
+      className="
+        border-t
+        border-slate-800
+        mt-6
+        pt-5
+      "
+    >
+
+      <div
+        className="
+          flex
+          items-center
+          justify-between
+          gap-4
+        "
+      >
+
+        {/* FOOTER TEXT */}
+
+        <div>
+
+          <p
+            className="
+              text-xs
+              font-medium
+              text-blue-400
+            "
+          >
+            Your reading journey
+          </p>
+
+          <p
+            className="
+              text-xs
+              text-slate-500
+              mt-1
+            "
+          >
+            Review your previous results
+          </p>
+
+        </div>
+
+
+        {/* BUTTON */}
+
+        <button
+          onClick={() => navigate("/history")}
+          className="
+            shrink-0
+            border
+            border-blue-400/60
+            text-blue-300
+            px-5
+            py-2.5
+            rounded-xl
+            text-sm
+            font-semibold
+            hover:bg-blue-400
+            hover:text-slate-950
+            hover:border-blue-400
+            transition-all
+          "
+        >
+          View History →
+        </button>
+
+      </div>
+
+    </div>
+
+  </div>
+
+</div>
 
         </section>
 
