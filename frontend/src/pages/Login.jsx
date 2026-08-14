@@ -5,6 +5,7 @@ import {
   signInWithEmailAndPassword,
   GoogleAuthProvider,
   signInWithPopup,
+  sendPasswordResetEmail,
 } from "firebase/auth";
 
 import {
@@ -154,6 +155,65 @@ function Login() {
 
     }
 
+  };
+
+
+  // =========================================================
+  // FORGOT PASSWORD
+  // =========================================================
+
+  const handleForgotPassword = async () => {
+    setError("");
+
+    const trimmedEmail = email.trim();
+
+    if (!trimmedEmail) {
+      setError("Please enter your email address first.");
+      return;
+    }
+
+    try {
+      setLoading(true);
+
+      await sendPasswordResetEmail(auth, trimmedEmail);
+
+      setError(
+        "Password reset link sent. Please check your email, including your Spam folder."
+      );
+    } catch (error) {
+      console.error("Password reset error:", error);
+
+      switch (error.code) {
+        case "auth/invalid-email":
+          setError("Please enter a valid email address.");
+          break;
+
+        case "auth/user-not-found":
+          setError(
+            "No ReadEase account was found with this email. Please register first."
+          );
+          break;
+
+        case "auth/too-many-requests":
+          setError(
+            "Too many password reset requests. Please try again later."
+          );
+          break;
+
+        case "auth/network-request-failed":
+          setError(
+            "Network error. Please check your internet connection."
+          );
+          break;
+
+        default:
+          setError(
+            "Unable to send the password reset email. Please try again."
+          );
+      }
+    } finally {
+      setLoading(false);
+    }
   };
 
 
@@ -1004,13 +1064,8 @@ function Login() {
                     hover:text-cyan-300
                     transition
                   "
-                  onClick={() => {
-
-                    alert(
-                      "Password reset will be added next."
-                    );
-
-                  }}
+                  onClick={handleForgotPassword}
+                  disabled={loading || googleLoading}
                 >
                   Forgot Password?
                 </button>
